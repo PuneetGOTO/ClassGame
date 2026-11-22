@@ -303,6 +303,41 @@ input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: var(--blue
   .airhockey-team,.airhockey-center,.airhockey-pips { gap: 5px; }
   .airhockey-pips i { width: 7px; }
 }
+.candy-stage { display: grid; gap: 10px; width: 100%; }
+.candy-hud { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 12px;
+  padding: 10px 18px; border-radius: 18px; background: linear-gradient(180deg, #ffffff, #fff5eb);
+  border: 3px solid #ffd6a5; box-shadow: 0 6px 0 rgba(217, 152, 108, 0.25); }
+.candy-team { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.candy-team.red { justify-content: flex-end; }
+.candy-pill { padding: 5px 14px; border-radius: 999px; font-size: .88rem; font-weight: 850; color: #ffffff; white-space: nowrap; }
+.candy-pill.blue { background: linear-gradient(180deg, #56ccf2, #2aa6df); box-shadow: 0 3px 0 #1b7ead; }
+.candy-pill.red { background: linear-gradient(180deg, #ff85a2, #f24c7c); box-shadow: 0 3px 0 #c22e59; }
+.candy-score { font-size: clamp(1.45rem, 2.4vw, 2.1rem); font-weight: 900; color: #5c3d2e; font-variant-numeric: tabular-nums; }
+.candy-hud-center { display: flex; align-items: center; gap: 8px; }
+.candy-mode-tag { padding: 6px 14px; border-radius: 999px; font-size: .84rem; font-weight: 850; white-space: nowrap;
+  background: #fff0d6; color: #b45309; border: 2px solid #fbbf24; }
+.candy-mode-tag.fever { background: #ffe4ec; color: #e11d48; border-color: #fb7185; box-shadow: 0 0 12px rgba(251, 113, 133, 0.4); }
+.candy-mute { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px;
+  border: 2px solid #ffd6a5; background: #ffffff; color: #7c543e; cursor: pointer; }
+.candy-mute:hover { background: #fff0d6; }
+.candy-canvas { width: 100%; aspect-ratio: 1200 / 640; display: block; border-radius: 18px;
+  border: 4px solid #ffffff; box-shadow: 0 12px 30px rgba(138, 101, 74, 0.24); background: #fff8ee; }
+.candy-controls { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 6px 20px; }
+.candy-btn { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  display: grid; place-content: center; justify-items: center; gap: 2px; padding: 0; font-weight: 900;
+  transition: transform .07s, box-shadow .07s; }
+.candy-move-group { display: flex; align-items: center; gap: 8px; }
+.candy-btn-move,.candy-btn-soft { inline-size: clamp(64px, 16vw, 84px); block-size: clamp(72px, 18vw, 90px);
+  border-radius: 18px; border: 3px solid #ffffff; color: #5c3d2e; font-size: .82rem; }
+.candy-btn-move { background: linear-gradient(180deg, #fffdf9, #ffe8cc); box-shadow: 0 5px 0 #e3b88b; }
+.candy-btn-soft { background: linear-gradient(180deg, #e0f9ee, #a7f3d0); box-shadow: 0 5px 0 #4fb88a; color: #065f46; }
+.candy-action-group { display: flex; align-items: center; gap: 10px; }
+.candy-btn-rotate,.candy-btn-drop { border-radius: 50%; border: 3px solid #ffffff; color: #ffffff; }
+.candy-btn-rotate { inline-size: clamp(78px, 21vw, 96px); aspect-ratio: 1; font-size: .88rem;
+  background: linear-gradient(180deg, #7dd3fc, #0ea5e9); box-shadow: 0 5px 0 #0369a1; }
+.candy-btn-drop { inline-size: clamp(94px, 25vw, 114px); aspect-ratio: 1; font-size: .96rem;
+  background: linear-gradient(180deg, #ff8fab, #f43f5e); box-shadow: 0 5px 0 #be123c; }
+.candy-btn:active,.candy-btn[data-active="true"] { transform: translateY(3px) scale(0.95); box-shadow: 0 2px 0 rgba(92, 61, 46, 0.35); }
 .host-side-roster { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
 .host-side-roster > div { display: grid; gap: 5px; padding: 10px 14px; border: 1px solid var(--side-line); border-radius: 8px; }
 .host-side-roster .arena-side-names { justify-content: center; }
@@ -595,6 +630,10 @@ button.tile:hover { box-shadow: inset 0 0 0 2px var(--blue); }
   .controller-match .volleyball-jump { inline-size: clamp(92px,30svh,120px); }
   .controller-match .airhockey-controls { gap: 6px; padding-block: 4px; }
   .controller-match .airhockey-stick { inline-size: clamp(112px,42svh,170px); }
+  .controller-match .candy-controls { padding: 4px 6px 10px; }
+  .controller-match .candy-btn-move,.controller-match .candy-btn-soft { inline-size: clamp(58px,20svh,78px); block-size: clamp(64px,24svh,84px); }
+  .controller-match .candy-btn-rotate { inline-size: clamp(72px,26svh,90px); }
+  .controller-match .candy-btn-drop { inline-size: clamp(88px,32svh,108px); }
   .controller-match[data-round="running"] .practice-controls { justify-content: flex-end; padding-top: 6px; }
   .controller-match .round-outcome { min-height: 132px; }
   .host-display { padding-block: 10px; }
@@ -617,9 +656,9 @@ button.tile:hover { box-shadow: inset 0 0 0 2px var(--blue); }
   .arena-board .quiz-prompt { min-height: 0; padding: 6px 2px; }
   .arena-options > div { padding: 4px; }
   .arena-board .glass { height: min(120px,32svh); }
-  .volleyball-stage,.airhockey-stage { gap: 6px; }
-  .volleyball-hud,.airhockey-hud { padding: 6px 8px; }
-  .volleyball-canvas,.airhockey-canvas { width: min(100%,max(240px,calc(200svh - 340px))); justify-self: center; }
+  .volleyball-stage,.airhockey-stage,.candy-stage { gap: 6px; }
+  .volleyball-hud,.airhockey-hud,.candy-hud { padding: 6px 10px; }
+  .volleyball-canvas,.airhockey-canvas,.candy-canvas { width: min(100%,max(240px,calc(200svh - 340px))); justify-self: center; }
 }
 @media (orientation: landscape) and (min-width: 720px) and (max-width: 800px) {
   .host-layout { grid-template-columns: minmax(0,1fr) minmax(175px,.38fr); }

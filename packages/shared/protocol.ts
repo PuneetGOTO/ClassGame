@@ -23,7 +23,7 @@ export const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("cursor"), direction: directionSchema }),
   z.object({ kind: z.literal("choice"), questionId: z.number().int().positive(), index: z.number().int().min(0).max(3) }),
   z.object({ kind: z.literal("cell"), index: z.number().int().min(0).max(2_000) }),
-  z.object({ kind: z.literal("action"), action: z.enum(["shoot", "jump", "duck", "interact", "hold-left", "hold-right", "release"]) }),
+  z.object({ kind: z.literal("action"), action: z.enum(["shoot", "jump", "duck", "interact", "hold-left", "hold-right", "release", "rotate", "hard-drop"]) }),
   z.object({ kind: z.literal("stick"), x: z.number().finite().min(-1).max(1), y: z.number().finite().min(-1).max(1) }),
   z.object({ kind: z.literal("answer"), questionId: z.number().int().nonnegative(), value: z.string().trim().min(1).max(64) })
 ]);
@@ -135,7 +135,56 @@ export interface AirHockeyScene {
   wallSeq: number;
   roundSeq: number;
 }
-export type Scene = Board | Tubes | Quiz | Arcade | VolleyballScene | AirHockeyScene;
+export type CandyPieceType = "I" | "O" | "T" | "S" | "Z" | "J" | "L";
+export interface CandyPiece {
+  type: CandyPieceType;
+  shape: number[][];
+  x: number;
+  y: number;
+  ghostY: number;
+}
+export interface CandyBoardView {
+  id: string;
+  side: number;
+  grid: string; // 长度 200（10x20），'.' 为空，'I/O/T/S/Z/J/L' 为软糖，'X' 为焦糖干扰块
+  piece: CandyPiece | null;
+  nextType: CandyPieceType;
+  score: number;
+  lines: number;
+  combo: number;
+  alive: boolean;
+  lastLockSeq: number;
+  lastLockY: number;
+  lastClearSeq: number;
+  lastClearCount: number;
+  lastClearRows: number[];
+  lastGarbageSeq: number;
+  lastGarbageCount: number;
+}
+export interface CandyAttackEvent {
+  seq: number;
+  fromSide: number;
+  toSide: number;
+  amount: number;
+  atMs: number;
+}
+export interface CandyTetrisScene {
+  kind: "candy-tetris";
+  cols: number;
+  rows: number;
+  theme: "macaron" | "berry" | "mint" | "peach";
+  elapsedMs: number;
+  fever: boolean; // 第 40 秒甜蜜狂热加速
+  dropIntervalMs: number;
+  boards: [CandyBoardView, CandyBoardView];
+  scores: [number, number];
+  lastAttack: CandyAttackEvent | null;
+  finished: boolean;
+  winnerSide: number | null;
+  soundSeq: number;
+  lastSound: "none" | "move" | "rotate" | "lock" | "clear" | "combo" | "attack" | "ko" | "fever";
+}
+export type Scene = Board | Tubes | Quiz | Arcade | VolleyballScene | AirHockeyScene | CandyTetrisScene;
 export interface AnswerStats { attempted: number; correct: number }
 export interface ResultMetrics extends Partial<AnswerStats> { progress?: Progress; sideAnswers?: AnswerStats }
 

@@ -10,10 +10,11 @@ export const CROSS_ROAD_ID = "game-07";
 export const NUMBER_HUNT_ID = "game-19";
 export const VOLLEYBALL_ID = "game-21";
 export const AIR_HOCKEY_ID = "game-22";
+export const CANDY_TETRIS_ID = "game-25";
 
 export type Category = "puzzle" | "adventure" | "math";
 export type Mode = "solo" | "co-op" | "team-quiz";
-export type Controls = "directions" | "cell" | "traffic" | "flight" | "runner" | "quest" | "answer" | "expression" | "volleyball" | "air-hockey";
+export type Controls = "directions" | "cell" | "traffic" | "flight" | "runner" | "quest" | "answer" | "expression" | "volleyball" | "air-hockey" | "candy-tetris";
 
 export interface GameInfo {
   id: string;
@@ -24,6 +25,8 @@ export interface GameInfo {
   controls: Controls;
   objective: string;
   sharedArena?: boolean;
+  /** 最大開局人數（預設 4；1v1 專屬遊戲設為 2） */
+  maxPlayers?: number;
 }
 
 const entries = [
@@ -55,10 +58,22 @@ const catalog: GameInfo[] = entries.map(([name, english, category, mode, control
   id: `game-${String(i + 1).padStart(2, "0")}`, name, english, category, mode, controls, objective,
   ...(controls === "volleyball" || controls === "air-hockey" ? { sharedArena: true } : {})
 }));
+const candyTetris: GameInfo = {
+  id: CANDY_TETRIS_ID,
+  name: "馬卡龍消行工坊",
+  english: "Candy Tetris",
+  category: "puzzle",
+  mode: "solo",
+  controls: "candy-tetris",
+  objective: "1v1 快節奏果凍方塊消行互攻！一次消除 2 行以上發射糖果炮彈頂起對手干擾行，迫使對手頂滿或 60 秒內積分較高者獲勝。",
+  sharedArena: true,
+  maxPlayers: 2
+};
+catalog.push(candyTetris);
 // Retired titles remain available for result history and CSV exports.
 export const gameById = new Map(catalog.map(game => [game.id, game]));
 const replacements = new Map([[CROSS_ROAD_ID, AIR_HOCKEY_ID], [NUMBER_HUNT_ID, VOLLEYBALL_ID]]);
-export const GAMES = catalog.slice(0, STATION_COUNT).map(game => gameById.get(replacements.get(game.id) ?? game.id)!);
+export const GAMES = catalog.slice(0, STATION_COUNT).map(game => gameById.get(replacements.get(game.id) ?? game.id)!).concat(candyTetris);
 export const categoryLabel: Record<Category, string> = { puzzle: "解謎", adventure: "冒險", math: "數學" };
 export const modeLabel: Record<Mode, string> = { solo: "單人", "co-op": "隊伍合作", "team-quiz": "隊伍答題" };
 export const fixedId = (type: "TEAM" | "HOST" | "STATION", number: number) =>

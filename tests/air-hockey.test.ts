@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { Arena } from "../apps/server/src/arena";
 import { hostKey } from "../apps/server/src/config";
 import { plugins } from "../local-games/registry";
-import { AIR_HOCKEY_ID, CROSS_ROAD_ID, GAME_MS } from "../packages/shared/catalog";
+import { AIR_HOCKEY_ID, CROSS_ROAD_ID, GAME_MS, GAMES } from "../packages/shared/catalog";
 import type { AirHockeyScene, Result, RoomView } from "../packages/shared/protocol";
 import { credentials, harness, ok, send } from "./socket-helper";
 
@@ -82,7 +82,7 @@ test("2v2 air hockey assigns 4 distinct paddles and emits timeout + score:result
     assert.ok(!oldView.ok && oldView.code === "host-refresh");
     await service.host("HOST-07");
     const state = service.campus.snapshot();
-    assert.equal(state.games.length, 20);
+    assert.equal(state.games.length, GAMES.length);
     assert.ok(!state.games.some(game => game.id === CROSS_ROAD_ID));
     const station = state.stations.find(item => item.hostId === "HOST-07")!;
     assert.deepEqual([station.floor, station.name, station.gameId], [3, "308 室", AIR_HOCKEY_ID]);

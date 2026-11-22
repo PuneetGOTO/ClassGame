@@ -504,8 +504,10 @@ export class Campus {
     if (!this.hosts.has(row.host_id)) return false;
     const ready = shuffled([...room.members.values()].filter(member =>
       member.checked_in && member.ready && this.players.has(member.player_id)), randomInt);
+    const info = gameById.get(row.game_id);
     if (ready.length < MIN_MATCH_PLAYERS || (!force && ready.length < room.members.size)) return false;
-    if (gameById.get(row.game_id)?.sharedArena && ready.length === 3) ready.pop();
+    if (info?.maxPlayers && ready.length > info.maxPlayers) ready.length = info.maxPlayers;
+    if (info?.sharedArena && ready.length === 3) ready.pop();
     const absent = [...room.members.values()].filter(member => !ready.includes(member));
     const participants = ready.map(member => member.player_id);
     const sides = ready.map((_, i) => ready.length === 4 ? i % 2 : i);
