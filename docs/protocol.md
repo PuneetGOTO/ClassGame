@@ -48,6 +48,8 @@ Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入
 
 客戶端請求回覆為 `{ ok: true, data }` 或 `{ ok: false, code, error }`。正式結算事件由伺服器傳送。`game:input` 接受角色移動 `move`、游標 `cursor`、動作 `action`、選項 `choice`、文字答案 `answer`。伺服器比對當前題目 ID、玩家陣營及場次。管理 API 的路由與權限位於 [service.ts](../apps/server/src/service.ts)。
 
+馬卡龍消行工坊使用 `hold-left`、`hold-right`、`hold-down`、`release`、`rotate` 及 `hard-drop` 動作。大螢幕需以 `host:register` 回報畫面版本 6 或更新版本，才會接到此遊戲的配對。
+
 `player:login` 接收 `studentNumber` 和 `code`。登入成功後簽發新的手機令牌，原裝置會退出。學號和登入碼雜湊由伺服器管理，公開事件及公開排行榜只提供玩家名稱。`campus:state.selfRegistration` 指示手機是否提供暱稱登記。
 
 答題經伺服器接受後，該玩家須等候 2,000 毫秒才能再送出答案。正式賽的 `match.remote` 和練習房的 `remote` 傳回個人的 `answerAvailableAt`。提早送出目前題目的答案會收到 `answer-cooldown`。同方其他手機各自計時。

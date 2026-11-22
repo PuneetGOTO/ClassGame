@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { GAMES } from "../packages/shared/catalog";
 import { neighbor, type Engine } from "../packages/game-sdk";
-import type { Action, Arcade, Board, Quiz, Tubes } from "../packages/shared/protocol";
+import type { Action, Arcade, Board, Quiz } from "../packages/shared/protocol";
 import { routeTiers } from "../packages/shared/route";
 import { plugins } from "../local-games/registry";
 import { expressionEquals24 } from "../local-games/game-11";
@@ -69,32 +69,6 @@ test("04 Rush Hour verifies collision and completes by actually exiting", () => 
   const path = [cell(29),move("right"),move("right"),cell(9),move("down"),move("down"),cell(11),move("up"),cell(14),
     ...Array.from({ length: 5 },() => move("right"))];
   path.forEach((input,index) => assert.ok(game.handleInput("a",input,frame(index * 100)), "traffic step " + index));
-  assert.ok(game.checkWin("a"));
-});
-for (const tier of [undefined, ...routeTiers]) test("05 Water Sort is solvable at difficulty " + (tier ?? "legacy"), () => {
-  const game = plugins.get("game-05")!({ playerIds: ["a"], seed: 57, tier });
-  const initial = game.getState() as Tubes;
-  const queue = [{ tubes: initial.tubes, path: [] as number[] }];
-  const keyFor = (tubes: number[][]) => tubes.map(tube => tube.join("")).sort().join("|");
-  const seen = new Set<string>([keyFor(initial.tubes)]);
-  let solution: number[] | undefined;
-  for (const { tubes,path } of queue) {
-    if (tubes.every(tube => !tube.length || (tube.length === 4 && tube.every(color => color === tube[0])))) { solution = path; break; }
-    tubes.forEach((source,a) => {
-      if (!source.length || (source.length === 4 && source.every(color => color === source[0]))) return;
-      tubes.forEach((target,b) => {
-        const color = source.at(-1);
-        if (a === b || target.length === 4 || (target.length && target.at(-1) !== color)) return;
-        const next = tubes.map(tube => tube.slice());
-        while (next[a].length && next[a].at(-1) === color && next[b].length < 4) next[b].push(next[a].pop()!);
-        const key = keyFor(next);
-        if (seen.has(key)) return;
-        seen.add(key); queue.push({ tubes: next, path: path.concat(a,b) });
-      });
-    });
-  }
-  assert.ok(solution);
-  solution.forEach((index,i) => assert.equal(game.handleInput("a",cell(index),frame(i*100)),true));
   assert.ok(game.checkWin("a"));
 });
 test("08 Star Defender's real projectiles can defeat eight moving enemies", () => {

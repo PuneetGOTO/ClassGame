@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowLeft, ArrowRight, ArrowUp, ArrowCounterClockwise, Bomb, CaretDoubleDown,
-  Check, Crosshair, Eraser, Flag, Lightning, Sword, Trophy
+  ArrowDown, ArrowClockwise, Check, Crosshair, Eraser, Flag, Lightning, Sword, Trophy
 } from "@phosphor-icons/react";
 import { teamColors, type Controls } from "../shared/catalog";
 import type { Action, MatchEndReason, MatchPanel, Member, RemoteControls, RoomView, Scene, SideCompletion } from "../shared/protocol";
@@ -10,6 +10,7 @@ import { fmtScore, ProgressBar, Status } from "./components";
 import { AirHockeyControls } from "./air-hockey-controls";
 import { AirHockeyCanvas } from "./air-hockey-view";
 import { BombermanCanvas } from "./bomberman-view";
+import { CandyStackCanvas } from "./candy-stack-view";
 import { ActionButton, DirectionStick } from "./controller-controls";
 import { DojoFighterCanvas } from "./dojo-fighter-view";
 import { VolleyballCanvas } from "./volleyball-view";
@@ -41,7 +42,7 @@ export function RoundOutcome({ winner, reason, side, panels }: {
   return <div className={"host-stage host-outcome round-outcome " + (won ? "won" : winner === null ? "" : "lost")} role="status" data-enter>
     {won ? <Trophy size={64} weight="duotone"/> : <Flag size={58} weight="duotone"/>}
     <strong>{title}</strong>
-    {(scene?.kind === "volleyball" || scene?.kind === "air-hockey") &&
+    {(scene?.kind === "volleyball" || scene?.kind === "air-hockey" || scene?.kind === "candy-stack") &&
       <p className="monotext">藍方 {scene.scores[0]} 比 {scene.scores[1]} 橙方</p>}
     {scene?.kind === "dojo-fighter" &&
       <p className="monotext">剩餘血量 · 藍方 {scene.teamHp[0]} 比 {scene.teamHp[1]} 橙方</p>}
@@ -84,6 +85,11 @@ export function ArenaPanels({ panels, members }: { panels: MatchPanel[]; members
       <BombermanCanvas scene={firstScene} members={members}/>
     </div>;
   }
+  if (firstScene?.kind === "candy-stack") {
+    return <div className="arena-shared" aria-label="即時對戰">
+      <CandyStackCanvas scene={firstScene} members={members}/>
+    </div>;
+  }
   return <div className="arena-panels" data-sides={panels.length} aria-label="即時對戰">
     {panels.map(panel => <section className="arena-panel" key={panel.side} data-side={panel.side}>
       <header><h2>{sideLabels[panel.side]}</h2><SideNames members={members} side={panel.side}/></header>
@@ -98,6 +104,7 @@ export function SceneView({ scene, cursor, completion }: { scene: Scene; cursor?
   if (scene.kind === "air-hockey") return <AirHockeyCanvas scene={scene} members={[]}/>;
   if (scene.kind === "dojo-fighter") return <DojoFighterCanvas scene={scene} members={[]}/>;
   if (scene.kind === "bomberman") return <BombermanCanvas scene={scene} members={[]}/>;
+  if (scene.kind === "candy-stack") return <CandyStackCanvas scene={scene} members={[]}/>;
   if (scene.kind === "grid") return <div className="board" style={{ "--cols": scene.width, "--rows": scene.height } as CSSProperties} aria-label="遊戲棋盤">
     {scene.tiles.map((tile, index) => {
       const contents = <>
@@ -221,9 +228,10 @@ export function GameControls({ remote, controls, gameId, offset, send }: {
       <ArrowUp size={24}/> 跳躍</ActionButton>
   </div>;
   const horizontal = controls === "flight" || controls === "volleyball" || controls === "dojo-fighter";
-  const continuous = controls === "volleyball" || controls === "dojo-fighter" || controls === "bomberman";
+  const continuous = controls === "volleyball" || controls === "dojo-fighter" || controls === "bomberman" || controls === "candy-stack";
   return <div className="handset-layout" data-controls={controls}>
-    <DirectionStick movement={continuous ? "hold" : controls === "cell" ? "cursor" : "move"} horizontal={horizontal} send={send}/>
+    <DirectionStick movement={continuous ? "hold" : controls === "cell" ? "cursor" : "move"}
+      horizontal={horizontal} downOnly={controls === "candy-stack"} send={send}/>
     {controls === "flight" && <ActionButton repeatMs={260} send={send} action={{ kind: "action", action: "shoot" }}
       label="發射" keys={spaceKey} className="control control-primary"><Crosshair size={24}/> 發射</ActionButton>}
     {controls === "quest" && <ActionButton send={send} action={{ kind: "action", action: "interact" }} label="互動" keys={spaceKey}
@@ -240,6 +248,12 @@ export function GameControls({ remote, controls, gameId, offset, send }: {
       <ArrowCounterClockwise size={20}/> 重排箱子</ActionButton>}
     {controls === "bomberman" && <ActionButton send={send} action={{ kind: "action", action: "bomb" }} label="放炸彈"
       keys={[" ", "v", "j", "p", "enter"]} className="bomberman-bomb-btn"><Bomb size={32} weight="fill"/><span>放炸彈</span></ActionButton>}
+    {controls === "candy-stack" && <div className="candy-actions">
+      <ActionButton send={send} action={{ kind: "action", action: "rotate" }} label="旋轉方塊"
+        keys={["arrowup", "w"]} className="control"><ArrowClockwise size={24}/> 旋轉</ActionButton>
+      <ActionButton send={send} action={{ kind: "action", action: "hard-drop" }} label="直接落下"
+        keys={spaceKey} className="control control-primary"><ArrowDown size={24}/> 直接落下</ActionButton>
+    </div>}
     {controls === "dojo-fighter" && <div className="dojo-action-group">
       <ActionButton send={send} action={{ kind: "action", action: "jump" }} label="跳躍" keys={jumpKeys} className="dojo-jump-btn">
         <ArrowUp size={28} weight="bold"/><span>跳躍</span></ActionButton>

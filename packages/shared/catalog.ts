@@ -6,6 +6,7 @@ export const GAME_MS = 60_000;
 export const COUNTDOWN_MS = 3_000;
 export const LOBBY_MS = 90_000;
 export const SCORE_SCALE = TEAM_SIZE;
+export const WATER_SORT_ID = "game-05";
 export const MAZE_MUNCHER_ID = "game-06";
 export const CROSS_ROAD_ID = "game-07";
 export const WEBCRAFT_ID = "game-17";
@@ -14,11 +15,14 @@ export const VOLLEYBALL_ID = "game-21";
 export const AIR_HOCKEY_ID = "game-22";
 export const BOMBERMAN_ID = "game-23";
 export const DOJO_FIGHTER_ID = "game-24";
+export const CANDY_STACK_ID = "game-25";
+export const CANDY_COLUMNS = 8;
+export const CANDY_ROWS = 16;
 
 export type Category = "puzzle" | "adventure" | "math";
 export type Mode = "solo" | "co-op" | "team-quiz";
 export type Controls = "directions" | "cell" | "traffic" | "flight" | "runner" | "quest" | "answer" | "expression"
-  | "volleyball" | "air-hockey" | "bomberman" | "dojo-fighter";
+  | "volleyball" | "air-hockey" | "bomberman" | "dojo-fighter" | "candy-stack";
 
 export interface GameInfo {
   id: string;
@@ -30,6 +34,7 @@ export interface GameInfo {
   objective: string;
   sharedArena?: boolean;
   minPlayers?: number;
+  maxPlayers?: number;
 }
 
 const entries = [
@@ -82,11 +87,23 @@ const bomberman: GameInfo = {
   sharedArena: true,
   minPlayers: 4
 };
-catalog.push(bomberman, dojoFighter);
+const candyStack: GameInfo = {
+  id: CANDY_STACK_ID,
+  name: "馬卡龍消行工坊",
+  english: "Candy Stack",
+  category: "puzzle",
+  mode: "solo",
+  controls: "candy-stack",
+  objective: "一對一排列糖果方塊。一次消除兩行以上會送出干擾行，先堆滿的一方落敗，60 秒到時比較本局分數。",
+  sharedArena: true,
+  maxPlayers: 2
+};
+catalog.push(bomberman, dojoFighter, candyStack);
 // Retired titles remain available for result history and CSV exports.
 export const gameById = new Map(catalog.map(game => [game.id, game]));
 const replacements = new Map([
-  [MAZE_MUNCHER_ID, BOMBERMAN_ID], [CROSS_ROAD_ID, AIR_HOCKEY_ID], [WEBCRAFT_ID, DOJO_FIGHTER_ID], [NUMBER_HUNT_ID, VOLLEYBALL_ID]
+  [WATER_SORT_ID, CANDY_STACK_ID], [MAZE_MUNCHER_ID, BOMBERMAN_ID], [CROSS_ROAD_ID, AIR_HOCKEY_ID],
+  [WEBCRAFT_ID, DOJO_FIGHTER_ID], [NUMBER_HUNT_ID, VOLLEYBALL_ID]
 ]);
 export const GAMES = catalog.slice(0, STATION_COUNT).map(game => gameById.get(replacements.get(game.id) ?? game.id)!);
 export const categoryLabel: Record<Category, string> = { puzzle: "解謎", adventure: "冒險", math: "數學" };

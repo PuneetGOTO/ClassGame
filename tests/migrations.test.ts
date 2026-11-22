@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { migrations } from "../apps/server/src/migrations";
 import { Store } from "../apps/server/src/store";
-import { AIR_HOCKEY_ID, BOMBERMAN_ID, CROSS_ROAD_ID, DOJO_FIGHTER_ID, MAZE_MUNCHER_ID, NUMBER_HUNT_ID, VOLLEYBALL_ID, WEBCRAFT_ID } from "../packages/shared/catalog";
+import { AIR_HOCKEY_ID, BOMBERMAN_ID, CANDY_STACK_ID, CROSS_ROAD_ID, DOJO_FIGHTER_ID, MAZE_MUNCHER_ID, NUMBER_HUNT_ID, VOLLEYBALL_ID, WATER_SORT_ID, WEBCRAFT_ID } from "../packages/shared/catalog";
 import { planPosition } from "../packages/shared/floors";
 
 test("upgrading a version-one database preserves its identity and initializes result metrics", async () => {
@@ -42,7 +42,7 @@ test("upgrading a version-one database preserves its identity and initializes re
       assert.equal(archived.baseAwarded,2);
       assert.deepEqual(archived.metrics,{});
       assert.deepEqual(store.playedGames("player"),[]);
-      assert.equal(store.get<{ user_version: number }>("PRAGMA user_version")!.user_version,12);
+      assert.equal(store.get<{ user_version: number }>("PRAGMA user_version")!.user_version,13);
       assert.equal(store.player("player")?.student_no,null);
       assert.equal(store.selfRegistration(),true);
       const stations = store.stationRows();
@@ -61,7 +61,8 @@ for (const { priorVersion, retired, replacement, host, station, name } of [
   { priorVersion: 8, retired: NUMBER_HUNT_ID, replacement: VOLLEYBALL_ID, host: "HOST-19", station: "STATION-19", name: "數字推理" },
   { priorVersion: 9, retired: CROSS_ROAD_ID, replacement: AIR_HOCKEY_ID, host: "HOST-07", station: "STATION-07", name: "穿越馬路" },
   { priorVersion: 10, retired: WEBCRAFT_ID, replacement: DOJO_FIGHTER_ID, host: "HOST-17", station: "STATION-17", name: "龍之遠征" },
-  { priorVersion: 11, retired: MAZE_MUNCHER_ID, replacement: BOMBERMAN_ID, host: "HOST-06", station: "STATION-06", name: "迷宮吃豆" }
+  { priorVersion: 11, retired: MAZE_MUNCHER_ID, replacement: BOMBERMAN_ID, host: "HOST-06", station: "STATION-06", name: "迷宮吃豆" },
+  { priorVersion: 12, retired: WATER_SORT_ID, replacement: CANDY_STACK_ID, host: "HOST-05", station: "STATION-05", name: "試管分色" }
 ]) test("station migration preserves official points for " + name, async () => {
   const directory = await mkdtemp(join(tmpdir(), "campus-retire-game-"));
   const path = join(directory, "game.sqlite");

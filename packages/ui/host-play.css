@@ -1,5 +1,5 @@
 .host-display[data-playing="true"] {
-  --play-field-height: max(190px, calc(100svh - 176px));
+  --play-field-height: max(190px, calc(100svh - 190px));
   width: min(1760px, calc(100% - 32px));
   padding-block: 12px;
 }
@@ -7,7 +7,7 @@
 .host-display[data-playing="true"] .host-layout { grid-template-columns: minmax(0, 1fr); }
 .host-display[data-playing="true"] .host-game { min-height: 0; padding: 14px; gap: 10px; }
 .host-display[data-playing="true"] .host-game:has(.double-banner) {
-  --play-field-height: max(160px, calc(100svh - 218px));
+  --play-field-height: max(160px, calc(100svh - 232px));
 }
 .host-display[data-playing="true"] .host-title h1 { margin-top: 2px; font-size: clamp(1.65rem, 4vw, 3.25rem); }
 .host-display[data-playing="true"] .host-clock .clock { font-size: clamp(2rem, 5vw, 3.5rem); }
@@ -30,6 +30,9 @@
 }
 .host-display[data-playing="true"] .bomberman-canvas {
   width: min(100%, calc(max(135px, var(--play-field-height) - 94px) * 13 / 11));
+}
+.host-display[data-playing="true"] .candy-canvas {
+  width: min(100%, calc(max(140px, var(--play-field-height) - 76px) * 15 / 8));
 }
 .host-display[data-playing="true"] .host-game > .double-banner {
   gap: 8px; padding: 4px 8px;

@@ -379,6 +379,20 @@ input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: var(--blue
 .dojo-attack-btn { inline-size: clamp(98px, 27vw, 122px); aspect-ratio: 1; background: linear-gradient(180deg, #f87171, #dc2626); color: #fffbeb; font-size: 1rem; }
 .dojo-jump-btn:active,.dojo-jump-btn[data-active="true"],.dojo-attack-btn:active,.dojo-attack-btn[data-active="true"] {
   transform: translateY(3px) scale(0.96); box-shadow: 0 2px 0 rgba(43, 30, 26, 0.35); }
+.candy-stage { display: grid; gap: 8px; width: 100%; }
+.candy-hud { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px;
+  padding: 8px 12px; border: 2px solid #e3cbb0; background: #fff9ed; border-radius: 12px; }
+.candy-team,.candy-hud-center { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.candy-team.orange { justify-content: flex-end; }
+.candy-pill { color: #125d89; font-weight: 750; }
+.candy-team.orange .candy-pill { color: #9a421c; }
+.candy-score { font-size: clamp(1.15rem, 3vw, 2rem); line-height: 1; font-variant-numeric: tabular-nums; }
+.candy-mode-tag { font-size: .875rem; color: #68523c; }
+.candy-mode-tag.fever { color: #ad2837; font-weight: 750; }
+.candy-mute { min-width: 44px; min-height: 44px; border: 1px solid #dcb99c; background: #fffdf8; color: #81353d; border-radius: 8px; }
+.candy-canvas { display: block; width: 100%; aspect-ratio: 15 / 8; background: #fdeeee; border: 1px solid #e3cbb0; border-radius: 12px; }
+.candy-actions { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+.candy-actions .control { min-height: 64px; }
 .host-side-roster { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
 .host-side-roster > div { display: grid; gap: 5px; padding: 10px 14px; border: 1px solid var(--side-line); border-radius: 8px; }
 .host-side-roster .arena-side-names { justify-content: center; }
@@ -698,6 +712,10 @@ button.tile:hover { box-shadow: inset 0 0 0 2px var(--blue); }
   .host-aside { grid-template-columns: minmax(0,1fr); }
 }
 @media (max-width: 520px) {
+  .candy-actions { grid-template-columns: minmax(0, 1fr); }
+  .candy-team,.candy-hud-center { flex-direction: column; }
+  .candy-team.orange { flex-direction: column-reverse; }
+  .candy-mode-tag { text-align: center; }
   .bomberman-hud { grid-template-columns: 1fr auto; }
   .bomberman-sides { grid-column: 1 / -1; grid-row: 2; }
   .bomberman-mute span { display: none; }

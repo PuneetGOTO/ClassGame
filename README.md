@@ -27,9 +27,13 @@ npm.cmd start
 
 在 Windows 本機用自動產生的金鑰時，可以從專案根目錄執行下面一行，把金鑰直接複製到剪貼簿。
 
-    (Get-Content -Raw .\data\local-credentials.json | ConvertFrom-Json).adminKey | Set-Clipboard
+```powershell
+(Get-Content -Raw .\data\local-credentials.json | ConvertFrom-Json).adminKey | Set-Clipboard
+```
 
 新部署可依[正式部署](#正式部署)生成 `ADMIN_KEY`。請私下交付管理金鑰，並將 `.env`、校園主機環境設定檔及本機金鑰檔存放在受控位置。
+
+## 網站入口
 
 | 入口 | 用途 |
 | --- | --- |
@@ -60,6 +64,8 @@ npm.cmd start
 霓虹炸彈人接替三樓 307 室（HOST-06）的迷宮吃豆。正式賽四人到齊後抽選 2 對 2 或四人混戰，練習房可自行選模式，由兩名 AI 補位。拖曳手機左側搖桿走位，右手同時可按放炸彈。場地在第 35 秒開始縮小。
 
 和風劍道對決接替四樓 411 室（HOST-17）的龍之遠征，支援 1 對 1 或 2 對 2。用左側搖桿左右移動，右手按跳躍或斬擊。擊倒對方全隊即勝，滿 60 秒時比較剩餘血量。替換前的成績會繼續計入排行榜。
+
+馬卡龍消行工坊接替三樓 306 室（HOST-05）的試管分色，正式賽及測試房都支援 1 對 1。左側搖桿可左右移動或向下加速，右側按鈕負責旋轉及直接落下。一次消除兩行以上會在對手的棋盤加入干擾行。先堆滿的一方落敗，滿 60 秒時比較局內分數，由伺服器按正式賽規則結算。舊關卡的正式成績保留。
 
 三樓與四樓按原平面圖重繪，地圖首頁顯示樓層切換、房間輪廓和活動房號。每層配置 10 個站點。後台可更改房號、樓層與座標，也可為各樓層獨立上傳 PNG、JPEG 或 WebP。上傳上限為 1.5 MB。
 
@@ -136,7 +142,7 @@ npm.cmd run test:browser
 | `apps/controller` | 手機控制器 |
 | `apps/host` | 固定主機畫面及 QR Code |
 | `apps/dashboard` | 地圖、管理後台與排行榜 |
-| `local-games/game-01` 至 `game-20` | 20 款可獨立登錄的伺服器遊戲插件 |
+| `local-games` | 20 款可獨立登錄的伺服器遊戲插件 |
 | `packages/game-sdk` | 插件生命週期、狀態存檔與共用遊戲工具 |
 | `packages/shared` | 關卡目錄、限制常數及 WebSocket 型別 |
 | `packages/ui` | 控制器、遊戲畫面、導覽與連線元件 |

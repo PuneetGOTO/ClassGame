@@ -288,6 +288,7 @@ function firstMoves(panel: MatchPanel): Action[] {
   if (scene.kind === "air-hockey") return [{ kind: "stick", x: 1, y: 0 }];
   if (scene.kind === "dojo-fighter") return [{ kind: "action", action: "attack" }, { kind: "action", action: "hold-right" }];
   if (scene.kind === "bomberman") return [{ kind: "action", action: "bomb" }, { kind: "action", action: "hold-down" }];
+  if (scene.kind === "candy-stack") return [{ kind: "action", action: "hard-drop" }];
   if (scene.kind === "arcade" && scene.theme !== "road") {
     return [{ kind: "action", action: scene.theme === "space" ? "shoot" : "jump" }];
   }

@@ -32,8 +32,8 @@ function dragDirection(x: number, y: number, previous: Direction | null) {
   return y < 0 ? "up" : "down";
 }
 
-export function DirectionStick({ movement, horizontal = false, send }: {
-  movement: Movement; horizontal?: boolean; send: Send;
+export function DirectionStick({ movement, horizontal = false, downOnly = false, send }: {
+  movement: Movement; horizontal?: boolean; downOnly?: boolean; send: Send;
 }) {
   const latest = useRef(send);
   latest.current = send;
@@ -78,7 +78,8 @@ export function DirectionStick({ movement, horizontal = false, send }: {
     const pointer = touch.current;
     if (!pointer || pointer.id !== event.pointerId) return;
     const x = event.clientX - pointer.x;
-    const y = horizontal ? 0 : event.clientY - pointer.y;
+    const vertical = event.clientY - pointer.y;
+    const y = horizontal ? 0 : downOnly ? Math.max(0, vertical) : vertical;
     const scale = pointer.travel / Math.max(pointer.travel, Math.hypot(x, y));
     setOffset({ x: x * scale, y: y * scale });
     changeDirection(dragDirection(x / pointer.travel, y / pointer.travel, active.current));
@@ -96,7 +97,7 @@ export function DirectionStick({ movement, horizontal = false, send }: {
       if (!gameKey(event)) return;
       const key = event.key.toLowerCase();
       const next = directions[key];
-      if (!next || (horizontal && (next === "up" || next === "down"))) return;
+      if (!next || ((horizontal || downOnly) && next === "up") || (horizontal && next === "down")) return;
       event.preventDefault();
       if (keys.current.has(key) || event.repeat) return;
       keys.current.set(key, next);
@@ -135,7 +136,7 @@ export function DirectionStick({ movement, horizontal = false, send }: {
       if (movement === "hold" && active.current) void latest.current({ kind: "action", action: "release" });
       active.current = null;
     };
-  }, [changeDirection, horizontal, movement]);
+  }, [changeDirection, downOnly, horizontal, movement]);
 
   const style = offset ? { "--stick-x": offset.x + "px", "--stick-y": offset.y + "px" } as CSSProperties : undefined;
   const value = direction === "left" ? -1 : direction === "right" ? 1 : 0;
@@ -144,19 +145,17 @@ export function DirectionStick({ movement, horizontal = false, send }: {
       aria-label={movement === "cursor" ? "游標搖桿" : "移動搖桿"}
       aria-valuemin={horizontal ? -1 : undefined} aria-valuemax={horizontal ? 1 : undefined}
       aria-valuenow={horizontal ? value : undefined} aria-valuetext={horizontal ? direction ? directionLabels[direction] : "置中" : undefined}
-      aria-keyshortcuts={horizontal ? "ArrowLeft ArrowRight A D" : "ArrowUp ArrowDown ArrowLeft ArrowRight W A S D"}
+      aria-keyshortcuts={horizontal ? "ArrowLeft ArrowRight A D" : downOnly ? "ArrowDown ArrowLeft ArrowRight A S D" : "ArrowUp ArrowDown ArrowLeft ArrowRight W A S D"}
       data-dragging={offset !== null} data-direction={direction ?? undefined} style={style}
       onPointerDown={start} onPointerMove={drag} onPointerUp={release} onPointerCancel={release}
       onLostPointerCapture={release} onContextMenu={event => event.preventDefault()}>
       <CaretLeft className="stick-left" aria-hidden="true" size={18} weight="bold"/>
       <CaretRight className="stick-right" aria-hidden="true" size={18} weight="bold"/>
-      {!horizontal && <>
-        <CaretUp className="stick-up" aria-hidden="true" size={18} weight="bold"/>
-        <CaretDown className="stick-down" aria-hidden="true" size={18} weight="bold"/>
-      </>}
+      {!horizontal && !downOnly && <CaretUp className="stick-up" aria-hidden="true" size={18} weight="bold"/>}
+      {!horizontal && <CaretDown className="stick-down" aria-hidden="true" size={18} weight="bold"/>}
       <span className="direction-stick-thumb" aria-hidden="true"/>
     </div>
-    <span className="stick-hint" aria-hidden="true">{movement === "cursor" ? "拖曳移動游標" : "拖曳移動"}</span>
+    <span className="stick-hint" aria-hidden="true">{movement === "cursor" ? "拖曳移動游標" : downOnly ? "左右移動 · 下推加速" : "拖曳移動"}</span>
   </div>;
 }
 

@@ -47,7 +47,7 @@ try {
   const dashboard = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   track(dashboard);
   await dashboard.goto(origin);
-  await dashboard.getByRole("heading", { name: "樓層地圖", exact: true }).waitFor({ state: "attached" });
+  await dashboard.getByRole("heading", { name: "聖誕闖關地圖", exact: true }).waitFor();
   await eventually(async () => assert.equal(await dashboard.locator(".map-marker").count(), 10));
   await dashboard.getByRole("img",{ name: "三樓平面圖" }).waitFor();
   await dashboard.getByRole("button", { name: /308 室 · 霓虹氣墊球/ }).waitFor();
@@ -64,6 +64,7 @@ try {
   for (const width of [1440,1024,820,768,390,320]) {
     await dashboard.setViewportSize({ width, height: 900 });
     assert.equal(await dashboard.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "map overflow at " + width);
+    assert.equal(await dashboard.locator(".nav-shell nav").evaluate(nav => nav.scrollWidth <= nav.clientWidth), true, "navigation fits at " + width);
   }
   await dashboard.setViewportSize({ width: 1440, height: 900 });
   if (process.env.CAMPUS_SCREENSHOTS) {
@@ -86,17 +87,19 @@ try {
   }
   await setChance(100);
 
-  async function openHost(id, onPage) {
+  async function openHost(id, onPage, resume = false) {
     const screen = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     track(screen);
     onPage?.(screen);
     await screen.goto(origin + "/host?id=" + id);
     await screen.getByLabel("主機金鑰").fill(hostKey(id));
     await screen.getByRole("button", { name: "連線至站點" }).click();
-    await screen.getByAltText("手機入場 QR Code").waitFor();
+    if (resume) await screen.locator(".host-display[data-playing='true']").waitFor();
+    else await screen.getByAltText("手機入場 QR Code").waitFor();
     return screen;
   }
   const host = await openHost("HOST-10");
+  const lobbyGameWidth = (await host.locator(".host-game").boundingBox()).width;
   const oldEntry = await freshEntry(host);
   const oldImage = await host.getByAltText("手機入場 QR Code").getAttribute("src");
   assert.equal(new URL(oldEntry).searchParams.get("station"), "STATION-10");
@@ -141,6 +144,9 @@ try {
     await page.getByText("請將手機轉成橫向").waitFor({ state: "hidden" });
     await ready.click();
   }
+  await host.locator(".countdown-center").waitFor();
+  assert.equal(await host.locator(".host-aside").count(), 0);
+  assert.ok((await host.locator(".host-game").boundingBox()).width > lobbyGameWidth * 1.25);
   const panels = host.locator(".arena-panel");
   await panels.nth(1).getByRole("heading").waitFor();
   await host.getByText("2 對 2", { exact: true }).waitFor();
@@ -213,6 +219,7 @@ try {
     if (i < 3) await attempted(winnerBoard, i + 1);
   }
   await host.getByText(firstSide === 0 ? "藍方獲勝" : "橙方獲勝", { exact: true }).waitFor();
+  await freshEntry(host);
   await Promise.all(winners.map(({ page }) => page.getByRole("heading", { name: "闖關成功" }).waitFor()));
   await Promise.all(losers.map(({ page }) => page.getByRole("heading", { name: "挑戰失敗" }).waitFor()));
   assert.match(await phone.locator(".result-points").innerText(), /\+[24] 分/);
@@ -223,6 +230,12 @@ try {
 
   await dashboard.goto(origin + "/leaderboard");
   assert.match(await dashboard.getByRole("row", { name: /瀏覽器玩家/ }).innerText(), /1 \/ 10/);
+  const liveRanks = (await (await fetch(origin + "/api/campus")).json()).leaderboard.players;
+  assert.deepEqual(await dashboard.locator(".xmas-podium-name").allTextContents(),
+    liveRanks.slice(0, 3).map(player => player.name));
+  if (process.env.CAMPUS_SCREENSHOTS) {
+    await dashboard.screenshot({ path: "test-results/christmas-leaderboard.png", animations: "disabled" });
+  }
   await dashboard.getByRole("button", { name: "隊伍排行" }).click();
   assert.equal(await dashboard.locator("tbody tr").count(), 10);
 
@@ -289,10 +302,10 @@ try {
   await pipeStick.waitFor({ state: "hidden" });
   await wait(1100);
   assert.equal(await phone.locator(".play-clock").innerText(), frozenTime);
-  pipeHost = await openHost("HOST-03");
+  pipeHost = await openHost("HOST-03", undefined, true);
   await pipeStick.waitFor();
   await paused.waitFor({ state: "hidden" });
-  assert.equal(await pipeHost.locator(".arena-panel .board").count(), 2);
+  await eventually(async () => assert.equal(await pipeHost.locator(".arena-panel .board").count(), 2));
 
   if (!process.env.SKIP_BROWSER_ADMIN) {
     await dashboard.goto(origin + "/admin");
@@ -379,11 +392,13 @@ try {
     let practiceHockey;
     let practiceBombs;
     let practiceDojo;
+    let practiceCandy;
     dashboard.context().once("page", page => {
       practiceCourt = watchVolleyballCourt(page, "practice:state");
       practiceHockey = watchCourt(page, "practice:state", "air-hockey");
       practiceBombs = watchCourt(page, "practice:state", "bomberman");
       practiceDojo = watchCourt(page, "practice:state", "dojo-fighter");
+      practiceCandy = watchCourt(page, "practice:state", "candy-stack");
     });
     const [practiceScreen] = await Promise.all([
       dashboard.waitForEvent("popup"),
@@ -436,7 +451,7 @@ try {
     await practiceScreen.getByText("兩支手掣已連線").waitFor();
     assert.equal(await practicePhones[1].getByRole("alert").count(), 0);
     assert.equal(await practicePhones[0].locator("select option").count(), 20);
-    for (const retired of ["game-06", "game-07", "game-17", "game-19"]) {
+    for (const retired of ["game-05", "game-06", "game-07", "game-17", "game-19"]) {
       assert.equal(await practicePhones[0].locator(`option[value='${retired}']`).count(), 0);
     }
     await practicePhones[0].getByText("請將手機轉成橫向").waitFor();
@@ -444,6 +459,8 @@ try {
     await Promise.all(practicePhones.map(page => page.setViewportSize(phoneLandscape)));
     await practiceScreen.getByRole("heading", { name: "史萊姆排球", exact: true }).waitFor();
     await practiceScreen.getByRole("button", { name: "開始測試" }).click();
+    await practiceScreen.locator(".countdown-center").waitFor();
+    assert.equal(await practiceScreen.locator(".host-aside").count(), 0);
     await practiceScreen.getByLabel("史萊姆排球實況畫面").waitFor();
     assert.equal(await practiceScreen.locator(".volleyball-score").count(), 2);
     await checkVolleyballRemote(practicePhones[0], practiceActions.get(practicePhones[0]), practiceCourt);
@@ -454,6 +471,7 @@ try {
       await practicePhones[0].screenshot({ path: "test-results/volleyball-controller.png", animations: "disabled" });
     }
     await practiceScreen.getByRole("button", { name: "結束這局" }).click();
+    await practiceScreen.getByRole("button", { name: "重新配對 P1", exact: true }).waitFor();
     await practicePhones[0].getByLabel("選擇遊戲").selectOption("game-22");
     await practicePhones[1].getByRole("heading", { name: "霓虹氣墊球", exact: true }).waitFor();
     await practiceScreen.getByRole("button", { name: "開始測試" }).click();
@@ -544,6 +562,46 @@ try {
     }
     await practiceScreen.getByRole("button", { name: "結束這局" }).click();
     await practicePhones[0].setViewportSize(phoneLandscape);
+    await practicePhones[0].getByLabel("選擇遊戲").selectOption("game-25");
+    await practiceScreen.getByRole("heading", { name: "馬卡龍消行工坊", exact: true }).waitFor();
+    await practiceScreen.getByRole("button", { name: "開始測試" }).click();
+    await practiceScreen.getByLabel("馬卡龍消行工坊即時對戰").waitFor();
+    await expectArenaFits(practiceScreen, ".candy-canvas");
+    assert.equal(await practiceScreen.locator(".host-aside").count(), 0);
+    const candyPhone = practicePhones[0];
+    await candyPhone.setViewportSize({ width: 568, height: 320 });
+    const candyStick = candyPhone.getByRole("application", { name: "移動搖桿" });
+    const rotate = candyPhone.getByRole("button", { name: "旋轉方塊" });
+    const hardDrop = candyPhone.getByRole("button", { name: "直接落下" });
+    await candyStick.waitFor();
+    await expectInViewport(candyPhone.locator(".play-clock, .direction-stick, .candy-actions .control"));
+    await expectSideBySide(candyPhone.locator(".handset-layout > *"));
+    const currentBoard = () => practiceCandy()?.boards[0];
+    await withTouch(candyPhone, async touch => {
+      const y = currentBoard().piece.y;
+      const center = await touchPoint(candyStick);
+      await touch("touchStart", center);
+      await touch("touchMove", { ...center, y: center.y + 28 });
+      await eventually(() => {
+        assert.ok(practiceActions.get(candyPhone).includes("hold-down"));
+        assert.ok(currentBoard()?.piece?.y > y);
+      });
+      await touch("touchEnd");
+    });
+    await rotate.tap();
+    const beforeDrop = currentBoard().lastLockSeq;
+    await hardDrop.tap();
+    await eventually(() => {
+      assert.ok(practiceActions.get(candyPhone).includes("rotate"));
+      assert.ok(currentBoard()?.lastLockSeq > beforeDrop);
+    });
+    if (process.env.CAMPUS_SCREENSHOTS) {
+      await practiceScreen.screenshot({ path: "test-results/christmas-candy-screen.png", animations: "disabled" });
+      await candyPhone.screenshot({ path: "test-results/christmas-candy-controller.png", animations: "disabled" });
+    }
+    await practiceScreen.getByRole("button", { name: "結束這局" }).click();
+    await practiceScreen.getByRole("button", { name: "重新配對 P1", exact: true }).waitFor();
+    await candyPhone.setViewportSize(phoneLandscape);
     await practicePhones[0].getByLabel("選擇遊戲").selectOption("game-10");
     await practiceScreen.getByRole("heading", { name: "心算挑戰", exact: true }).waitFor();
     await practicePhones[1].getByRole("heading", { name: "心算挑戰", exact: true }).waitFor();
@@ -664,7 +722,7 @@ try {
     }
   }
   assert.deepEqual(consoleErrors, []);
-  console.log("Browser smoke passed: both floors, QR rotation, four mobile remotes, split-screen questions, joystick movement, reconnect, weighted result and rankings."
+  console.log("Browser smoke passed: both floors, QR rotation and round visibility, four mobile remotes, split-screen questions, joystick movement, reconnect, weighted result and rankings."
     + (!process.env.SKIP_BROWSER_ADMIN ? " Admin, CSV, practice QR pairing and two-thumb arcade controls checked." : ""));
 } catch (error) {
   console.error(output);

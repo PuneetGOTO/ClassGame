@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import type { Server, Socket } from "socket.io";
-import { AIR_HOCKEY_ID, BOMBERMAN_ID, COUNTDOWN_MS, DOJO_FIGHTER_ID, GAME_MS, GAMES, gameById, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
+import { AIR_HOCKEY_ID, BOMBERMAN_ID, CANDY_STACK_ID, COUNTDOWN_MS, DOJO_FIGHTER_ID, GAME_MS, GAMES, gameById, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
 import { floorLabel, type Floor } from "../../../packages/shared/floors";
 import {
   DOUBLE_END_MS, DOUBLE_START_MS, HOST_SCREEN_VERSION, MATCH_ARRIVAL_MS, MATCH_WAIT_MS, MIN_MATCH_PLAYERS,
@@ -27,7 +27,7 @@ interface Room { row: SessionRow; members: Map<string, MemberRow>; arena?: Arena
 const resultDisplayMs = 5000;
 const clockCheckpointMs = 1000;
 const hostRefreshMessage = "請重新整理大螢幕頁面，載入新版對戰畫面";
-const screenVersions = new Map([[BOMBERMAN_ID, 5], [DOJO_FIGHTER_ID, 5], [AIR_HOCKEY_ID, 4], [VOLLEYBALL_ID, 3]]);
+const screenVersions = new Map([[CANDY_STACK_ID, 6], [BOMBERMAN_ID, 5], [DOJO_FIGHTER_ID, 5], [AIR_HOCKEY_ID, 4], [VOLLEYBALL_ID, 3]]);
 const minimumScreenVersion = (gameId: string) => screenVersions.get(gameId) ?? 2;
 const isFourPlayerFreeForAll = (room: SessionRow) => room.game_id === BOMBERMAN_ID && (room.seed & 1) === 1;
 
@@ -510,6 +510,7 @@ export class Campus {
     const info = gameById.get(row.game_id);
     const minPlayers = info?.minPlayers ?? MIN_MATCH_PLAYERS;
     if (ready.length < minPlayers || (!force && ready.length < room.members.size)) return false;
+    if (info?.maxPlayers && ready.length > info.maxPlayers) ready.length = info.maxPlayers;
     if (info?.sharedArena && ready.length === 3) ready.pop();
     if (ready.length < minPlayers) return false;
     const absent = [...room.members.values()].filter(member => !ready.includes(member));

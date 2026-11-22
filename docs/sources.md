@@ -8,7 +8,7 @@
 | [02 關燈解謎](../local-games/game-02/index.ts) | [lights-out/index.html](https://github.com/mashukui/web-games/blob/2770860c6e2b3ab8144a56462d8178fe7e3445c7/lights-out/index.html) | MIT | 反向洗牌與四鄰翻轉 |
 | [03 水管拼接](../local-games/game-03/index.ts) | [pipe-connect/index.html](https://github.com/mashukui/web-games/blob/2770860c6e2b3ab8144a56462d8178fe7e3445c7/pipe-connect/index.html) | MIT | 樹狀管線、旋轉與連通檢查 |
 | [04 交通解困](../local-games/game-04/index.ts) | [rush-hour/index.html](https://github.com/mashukui/web-games/blob/2770860c6e2b3ab8144a56462d8178fe7e3445c7/rush-hour/index.html) | MIT | 車體佔位及車輛碰撞 |
-| [05 試管分色](../local-games/game-05/index.ts) | [water-sort/index.html](https://github.com/mashukui/web-games/blob/2770860c6e2b3ab8144a56462d8178fe7e3445c7/water-sort/index.html) | MIT | 試管容量及同色連續傾倒 |
+| [05 號站點 · 馬卡龍消行工坊](../local-games/game-25/index.ts) | [ClassGame 投稿 PR #5](https://github.com/PuneetGOTO/ClassGame/pull/5) | ClassGame 貢獻程式碼 | 1 對 1 消行對戰、手機搖桿、雙棋盤及限時判勝 |
 | [06 號站點 · 霓虹炸彈人](../local-games/game-23/index.ts) | [ClassGame 投稿 PR #3](https://github.com/PuneetGOTO/ClassGame/pull/3) | ClassGame 貢獻程式碼 | 四人共用迷宮、縮圈、手機方向鍵與練習房 AI 補位 |
 | [07 號站點 · 霓虹氣墊球](../local-games/game-22/index.ts) | [ClassGame 投稿提交 7172ac8](https://github.com/qt1988117-debug/ClassGame/commit/7172ac8f0492c1855c56a5c7e70685f1f62207d5) | ClassGame 貢獻程式碼 | 共用球桌、冰球物理、手機搖桿與 60 秒結算 |
 | [08 太空守衛](../local-games/game-08/index.ts) | [star-defender/index.html](https://github.com/mashukui/web-games/blob/2770860c6e2b3ab8144a56462d8178fe7e3445c7/star-defender/index.html) | MIT | 飛船波次與彈道碰撞 |
@@ -46,4 +46,6 @@
 兩款新遊戲的圖形和音效由投稿程式透過 Canvas 與 Web Audio 繪製及產生，沿用原有相依套件。迷宮吃豆和龍之遠征以原 ID 保留成績。歷史程式碼分別保有 [Web Games 的 MIT 來源](https://github.com/mashukui/web-games/blob/2770860c6e2b3ab8144a56462d8178fe7e3445c7/maze-muncher/index.html)及 [WebCraft 的 MIT 來源](https://github.com/simon-borjeson/WebCraft/blob/8854deafc80e535d2580835786b18269c8eb3bc9/server/src/index.js)。
 
 上游授權全文在 [LICENSES](../local-games/LICENSES/) 中。BrowserQuest 的 MPL-2.0 改編程式保持為獨立的 [upstream-combat.ts](../local-games/game-16/upstream-combat.ts)，附授權全文及固定來源。校園版遊戲畫面與地圖為原創，BrowserQuest 的原作美術、音訊與內容授權資料請見上游的 [授權說明](https://github.com/matheopalmier/browserquest/blob/69d9fc179d0c1ea012079b69bbccf7698bfd2982/LICENSE)。
+
+馬卡龍消行工坊使用投稿的 Canvas 圖形與 Web Audio 音效。試管分色的歷史成績仍按原遊戲 ID 顯示，原始碼來自 [Web Games 的 MIT 來源](https://github.com/mashukui/web-games/blob/2770860c6e2b3ab8144a56462d8178fe7e3445c7/water-sort/index.html)。聖誕介面及領獎台採用 [ClassGame 投稿 PR #6](https://github.com/PuneetGOTO/ClassGame/pull/6) 的設計。
 

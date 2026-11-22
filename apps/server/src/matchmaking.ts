@@ -24,9 +24,8 @@ export function selectMatch(waiting: Candidate[], rooms: RoomChoice[], now: numb
       const info = gameById.get(room.gameId);
       const minPlayers = info?.minPlayers ?? MIN_MATCH_PLAYERS;
       const isShared = Boolean(info?.sharedArena);
-      const size = minPlayers === MAX_MATCH_PLAYERS
-        ? MAX_MATCH_PLAYERS
-        : waiting.length % MAX_MATCH_PLAYERS === 1 && waiting.length >= 5 ? 3 : MAX_MATCH_PLAYERS;
+      const leavePair = minPlayers < MAX_MATCH_PLAYERS && waiting.length % MAX_MATCH_PLAYERS === 1 && waiting.length >= 5;
+      const size = Math.min(info?.maxPlayers ?? MAX_MATCH_PLAYERS, leavePair ? 3 : MAX_MATCH_PLAYERS);
       const target = isShared && size === 3 ? 2 : size;
       const players = [first, ...others.slice(0, target - 1)];
       const required = wait >= MATCH_WAIT_MS ? minPlayers : target;
