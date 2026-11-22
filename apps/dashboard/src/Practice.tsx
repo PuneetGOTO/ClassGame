@@ -5,6 +5,7 @@ import { practiceNames, practiceSeats, type PracticeRole, type PracticeView } fr
 import type { Action } from "../../../packages/shared/protocol";
 import { sideLabels } from "../../../packages/shared/route";
 import { Brand, ErrorText, RotatingQr, RoomClock, ScreenPauseNotice, Status } from "../../../packages/ui/components";
+import { RotateGameNotice, useGameOrientation } from "../../../packages/ui/game-orientation";
 import { ArenaPanels, GameControls, RoundOutcome } from "../../../packages/ui/game-view";
 import { RemoteError, message, request, socket, type CampusConnection } from "../../../packages/ui/network";
 
@@ -21,6 +22,8 @@ export function Practice({ connection }: { connection: CampusConnection }) {
   const [joining, setJoining] = useState(true);
   const active = useRef<PracticeView | null>(null);
   const seq = useRef(0);
+  const isController = role !== "screen";
+  const { portrait, lockLandscape } = useGameOrientation(isController && view !== null);
 
   const update = useCallback((next: PracticeView) => {
     seq.current = active.current?.round?.id === next.round?.id ? Math.max(seq.current, next.seq) : next.seq;
@@ -135,17 +138,16 @@ export function Practice({ connection }: { connection: CampusConnection }) {
         {GAMES.filter(item => item.category === category as Category).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
       </optgroup>)}</select>
     </label>}
-    {!playing ? <button type="button" className="button primary" disabled={!ready || !online || busy}
+    {!playing ? <button type="button" className="button primary" disabled={!ready || !online || busy || (isController && portrait)}
       onClick={() => void run(() => request("practice:start", null))}>{round ? "再玩一局" : "開始測試"}</button>
       : <button type="button" className="button secondary" disabled={!online || busy}
         onClick={() => void run(() => request("practice:stop", null))}>結束這局</button>}
     {!ready && !playing && <p className="muted small">大螢幕和 P1、P2 都連線後即可開局。</p>}
   </div>;
-  if (role !== "screen") {
+  if (isController) {
     const side = practiceSeats.indexOf(role);
-    return <main id="main" className="controller narrow">
-      <section className="panel play-panel remote-panel" data-enter
-        data-expression={game.controls === "expression" && round?.status === "running" ? "" : undefined}>
+    return <main id="main" className="controller narrow controller-match" data-round={round?.status}>
+      <section className="panel play-panel remote-panel" data-enter>
         <div className="play-heading"><div><p className="eyebrow">{practiceNames[role]}</p><h1>{game.name}</h1></div>
           {playing && <div className="play-clock"><RoomClock room={round} offset={offset}/></div>}</div>
         <div className="remote-player" data-side={side}><strong>{role} · {sideLabels[side]}</strong>
@@ -157,7 +159,8 @@ export function Practice({ connection }: { connection: CampusConnection }) {
         {round?.status === "finished" && (round.reason === "host-offline"
           ? <p className="notice" role="status">大螢幕重連逾時，本局已取消。</p>
           : <RoundOutcome winner={round.winner} reason={round.reason} side={side}/>)}
-        {online && view.screenOnline && round?.status === "running" && round.pausedAt == null &&
+        {portrait && <RotateGameNotice lockLandscape={lockLandscape}/>}
+        {!portrait && online && view.screenOnline && round?.status === "running" && round.pausedAt == null &&
           <GameControls key={round.id} remote={view.remote ?? {}} controls={game.controls} gameId={game.id} offset={offset} send={send}/>}
         {controls}
       </section>
@@ -193,6 +196,7 @@ export function Practice({ connection }: { connection: CampusConnection }) {
             : <RoundOutcome winner={round.winner} reason={round.reason} panels={view.panels}/>
           : <div className="host-stage idle practice-idle"><GameController size={68} weight="duotone"/>
             <h2>{ready ? "兩支手掣已連線" : "等待手機掃碼連線"}</h2><p>{game.objective}</p>
+            {ready && <p>兩位玩家將手機轉成橫向後即可開局。</p>}
           </div>}
         {controls}
       </section>

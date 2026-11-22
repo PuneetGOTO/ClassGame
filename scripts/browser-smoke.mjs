@@ -12,6 +12,9 @@ import { chromium } from "playwright";
 const password = "standalone-browser-test-admin-key";
 const hostSecret = "standalone-browser-test-host-key";
 const hostKey = id => createHmac("sha256", hostSecret).update("campus-host:" + id).digest("base64url");
+const phonePortrait = { width: 390, height: 844 };
+const phoneLandscape = { width: 844, height: 390 };
+const landscapeSizes = [[568,320],[667,375],[844,390]];
 const temp = await mkdtemp(join(tmpdir(), "campus-browser-"));
 const probe = createServer();
 await new Promise(resolve => probe.listen(0, "127.0.0.1", resolve));
@@ -101,7 +104,7 @@ try {
   assert.notEqual(await host.getByAltText("手機入場 QR Code").getAttribute("src"), oldImage);
 
   const players = await Promise.all(Array.from({ length: 4 }, (_, index) => browser.newPage({
-    viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true
+    viewport: phonePortrait, hasTouch: true, isMobile: true
   }).then(page => {
     track(page);
     return { name: index ? "測試玩家 " + index : "瀏覽器玩家", page };
@@ -131,7 +134,12 @@ try {
   assert.equal(await phone.getByRole("button", { name: "我已準備好" }).count(), 0);
   for (const { page } of players) {
     await page.goto(await freshEntry(host));
-    await page.getByRole("button", { name: "我已準備好" }).click();
+    await page.getByText("請將手機轉成橫向").waitFor();
+    const ready = page.getByRole("button", { name: "我已準備好" });
+    assert.equal(await ready.isDisabled(), true);
+    await page.setViewportSize(phoneLandscape);
+    await page.getByText("請將手機轉成橫向").waitFor({ state: "hidden" });
+    await ready.click();
   }
   const panels = host.locator(".arena-panel");
   await panels.nth(1).getByRole("heading").waitFor();
@@ -143,14 +151,21 @@ try {
   assert.equal(await panels.count(), 2);
   assert.equal(await panels.nth(0).locator(".arena-side-names span").count(), 2);
   assert.equal(await panels.nth(1).locator(".arena-side-names span").count(), 2);
-  for (const width of [390, 320]) {
-    await phone.setViewportSize({ width, height: 844 });
-    assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "controller overflow at " + width);
+  for (const [width, height] of landscapeSizes) {
+    await phone.setViewportSize({ width, height });
+    await expectInViewport(phone.locator(".play-clock, .remote-choices .control"));
+    const choices = await phone.locator(".remote-choices .control").evaluateAll(buttons => buttons.map(button => button.offsetTop));
+    assert.equal(new Set(choices).size, 1, "choice keys must share one row");
   }
-  await phone.setViewportSize({ width: 390, height: 844 });
-  for (const [width, height] of [[1440,900],[1024,768],[768,768]]) {
+  await phone.setViewportSize(phonePortrait);
+  await phone.getByText("請將手機轉成橫向").waitFor();
+  assert.equal(await phone.locator(".remote-choices").count(), 0);
+  await phone.locator(".play-clock").waitFor();
+  await phone.setViewportSize(phoneLandscape);
+  for (const [width, height] of [[1440,900],[1024,768],[768,500],[667,375],[768,768]]) {
     await host.setViewportSize({ width, height });
     assert.equal(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "host overflow at " + width);
+    if (width > height) await expectSideBySide(panels);
   }
   await host.setViewportSize({ width: 1440, height: 900 });
 
@@ -355,7 +370,7 @@ try {
     await practiceScreen.getByText("等待手機掃碼連線").waitFor();
     assert.equal(await practiceScreen.locator(".practice-seat .qr-timer").count(), 2);
     const practiceActions = new Map();
-    const practiceContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const practiceContext = await browser.newContext({ viewport: phonePortrait, hasTouch: true, isMobile: true });
     async function practiceEntry(role) {
       const fresh = await practiceScreen.waitForFunction(seat => {
         const link = document.querySelector('.practice-seat a[href*="role=' + seat + '"]');
@@ -400,6 +415,9 @@ try {
     assert.equal(await practicePhones[0].locator("select option").count(), 20);
     assert.equal(await practicePhones[0].locator("option[value='game-19']").count(), 0);
     assert.equal(await practicePhones[0].locator("option[value='game-07']").count(), 0);
+    await practicePhones[0].getByText("請將手機轉成橫向").waitFor();
+    assert.equal(await practicePhones[0].getByRole("button", { name: "開始測試" }).isDisabled(), true);
+    await Promise.all(practicePhones.map(page => page.setViewportSize(phoneLandscape)));
     await practiceScreen.getByRole("heading", { name: "史萊姆排球", exact: true }).waitFor();
     await practiceScreen.getByRole("button", { name: "開始測試" }).click();
     await practiceScreen.getByLabel("史萊姆排球實況畫面").waitFor();
@@ -448,14 +466,16 @@ try {
     await practicePhones[1].getByRole("heading", { name: "二十四點", exact: true }).waitFor();
     await practiceScreen.getByRole("button", { name: "開始測試" }).click();
     const expression = practicePhones[0].getByRole("textbox", { name: "輸入算式" });
-    await practicePhones[0].setViewportSize({ width: 320, height: 568 });
+    await practicePhones[0].setViewportSize({ width: 568, height: 320 });
+    await expression.waitFor();
+    await expectInViewport(practicePhones[0].locator(".play-clock, .answer-form input, .answer-form button"));
     await practicePhones[0].getByRole("button", { name: "1", exact: true }).tap();
     assert.equal(await expression.inputValue(), "1");
     const confirmOnScreen = await practicePhones[0].getByRole("button", { name: "確認答案" }).evaluate(button => {
       const rect = button.getBoundingClientRect();
       return scrollY === 0 && rect.top >= 0 && rect.bottom <= innerHeight && document.documentElement.scrollWidth <= innerWidth;
     });
-    assert.equal(confirmOnScreen, true, "expression submit must fit at 320 × 568");
+    assert.equal(confirmOnScreen, true, "expression submit must fit at 568 × 320");
     if (process.env.CAMPUS_SCREENSHOTS) {
       await practicePhones[0].screenshot({ path: "test-results/game24-compact.png", animations: "disabled" });
     }
@@ -470,13 +490,20 @@ try {
     await expression.fill("2");
     await practicePhones[0].getByRole("button", { name: "確認答案" }).tap();
     await attempted(practiceScreen.locator(".arena-panel").first(), 2);
-    await practicePhones[0].setViewportSize({ width: 390, height: 844 });
+    await practicePhones[0].setViewportSize(phoneLandscape);
     await practicePhones[0].getByRole("button", { name: "結束這局" }).tap();
     await practicePhones[1].getByLabel("選擇遊戲").selectOption("game-03");
     await practiceScreen.getByRole("heading", { name: "水管拼接", exact: true }).waitFor();
     await practiceScreen.getByRole("button", { name: "開始測試" }).click();
     await practicePhones[0].getByRole("button", { name: "向下" }).waitFor();
     assert.equal(await practiceScreen.locator(".arena-panel .board").count(), 2);
+    await practicePhones[0].setViewportSize({ width: 568, height: 320 });
+    await expectInViewport(practicePhones[0].locator(".play-clock, .direction-controls .control"));
+    await expectSideBySide(practicePhones[0].locator(".direction-controls > *"));
+    if (process.env.CAMPUS_SCREENSHOTS) {
+      await practicePhones[0].screenshot({ path: "test-results/landscape-directions.png", animations: "disabled" });
+    }
+    await practicePhones[0].setViewportSize(phoneLandscape);
     for (const width of [1440, 1024, 768, 390]) {
       await practiceScreen.setViewportSize({ width, height: 900 });
       assert.equal(await practiceScreen.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -591,12 +618,33 @@ function watchVolleyballCourt(page, event) {
   return side => read()?.players.find(player => player.side === side);
 }
 
+async function expectInViewport(elements) {
+  await eventually(async () => {
+    const layout = await elements.evaluateAll(items => ({
+      viewport: { width: innerWidth, height: innerHeight },
+      overflow: document.documentElement.scrollWidth > innerWidth,
+      bounds: items.map(item => ({ name: item.getAttribute("aria-label") ?? item.textContent, rect: item.getBoundingClientRect().toJSON() }))
+    }));
+    assert.ok(layout.bounds.length > 0 && !layout.overflow, "controls must fit the landscape width");
+    for (const { name, rect } of layout.bounds) {
+      assert.ok(rect.width > 0 && rect.left >= 0 && rect.right <= layout.viewport.width &&
+        rect.height > 0 && rect.top >= 0 && rect.bottom <= layout.viewport.height,
+      `${name} must fit in ${layout.viewport.width} × ${layout.viewport.height}`);
+    }
+  });
+}
+
+async function expectSideBySide(elements) {
+  const [left, right] = await Promise.all([elements.nth(0).boundingBox(), elements.nth(1).boundingBox()]);
+  assert.ok(left && right && left.x + left.width <= right.x, "panels must be side by side in landscape");
+}
+
 async function checkVolleyballRemote(page, actions, court) {
   const stick = page.getByRole("slider", { name: "移動搖桿" });
   const jump = page.getByRole("button", { name: "跳躍擊球" });
   await stick.waitFor();
   const side = Number(await page.locator(".remote-player").getAttribute("data-side"));
-  for (const [width, height] of [[320, 568], [844, 390], [390, 844]]) {
+  for (const [width, height] of landscapeSizes) {
     await page.setViewportSize({ width, height });
     const [left, right] = await Promise.all([stick.boundingBox(), jump.boundingBox()]);
     assert.ok(left.x + left.width < right.x, "movement must be left of jump");
@@ -644,7 +692,7 @@ async function checkVolleyballRemote(page, actions, court) {
 async function checkAirHockeyRemote(page, court) {
   const stick = page.getByRole("application", { name: "球拍搖桿" });
   await stick.waitFor();
-  for (const [width, height] of [[320, 568], [844, 390], [390, 844]]) {
+  for (const [width, height] of landscapeSizes) {
     await page.setViewportSize({ width, height });
     const bounds = await stick.boundingBox();
     assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width && bounds.y + bounds.height <= height,

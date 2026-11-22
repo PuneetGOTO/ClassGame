@@ -8,6 +8,7 @@ import { floorLabel } from "../../../packages/shared/floors";
 import { studentNumberSchema, type Action, type PlayerView, type RoomView, type Result, type StationView } from "../../../packages/shared/protocol";
 import { completedRouteSteps, difficultyLabel, modeTitle, sideLabels, ROUTE_LENGTH, routeTierSizes, routePoints, routeTiers } from "../../../packages/shared/route";
 import { Countdown, Dialog, DoubleBanner, Empty, ErrorText, fmtChange, fmtScore, numberOf, RoomClock, ScreenPauseNotice, StationStatus, TeamTag } from "../../../packages/ui/components";
+import { RotateGameNotice, useGameOrientation } from "../../../packages/ui/game-orientation";
 import { GameControls, Members } from "../../../packages/ui/game-view";
 import { message, RemoteError, request, socket, type CampusConnection } from "../../../packages/ui/network";
 
@@ -182,6 +183,11 @@ export function Controller({ connection }: { connection: CampusConnection }) {
   }
 
   const routeStation = campus?.stations.find(station => station.id === entryStation);
+  const room = player?.room;
+  const me = room?.members.find(member => member.id === player?.player.id);
+  const showRemote = me?.checkedIn && room?.status !== "cancelled";
+  const inRound = room?.status === "countdown" || room?.status === "running";
+  const { portrait, lockLandscape } = useGameOrientation(Boolean(showRemote && room?.status !== "finished"));
   if (restoring && !player) return <main id="main" className="controller narrow"><Empty title="恢復手機連線中">
     {online ? "正在讀取玩家及場次" : "等待伺服器連線"}
   </Empty>{!online && <button className="button secondary full" onClick={() => { setRestoring(false); }}>返回登入</button>}</main>;
@@ -222,48 +228,46 @@ export function Controller({ connection }: { connection: CampusConnection }) {
     </section>
   </main>;
 
-  const room = player.room;
   const game = room ? gameById.get(room.gameId) : undefined;
   const roomStation = room && campus?.stations.find(station => station.id === room.stationId);
-  const me = room?.members.find(member => member.id === player.player.id);
   const result = player.lastResult;
   const visibleResult = !room && !player.route.searching && result && dismissed !== result.sessionId;
   const nextStation = campus?.stations.find(station => station.id === player.route.next?.stationId);
-  const showRemote = me?.checkedIn && room?.status !== "cancelled";
   const showExit = () => setShowLeave(true);
-  return <main id="main" className={"controller narrow" + (room?.status === "running" ? " controller-playing" : "")}>
+  return <main id="main" className={"controller narrow" + (showRemote ? " controller-match" : "")}
+    data-round={showRemote ? room?.status : undefined}>
     <div className="controller-id">
       <div><TeamTag id={player.player.teamId}/><strong>{player.player.name}</strong></div>
       <a className="controller-score" href="/leaderboard" title="即時排行榜"><Trophy size={18}/> <strong>{fmtScore(player.player.totalScore)}</strong> 分</a>
     </div>
     {!online && <p className="notice">正在重新連接伺服器</p>}
     <ErrorText text={error || (!showRemote ? scanError : "")}/>
-    {room && game && showRemote && <section className="panel play-panel remote-panel"
-      data-expression={game.controls === "expression" && room.status === "running" ? "" : undefined}>
+    {room && game && showRemote && <section className="panel play-panel remote-panel">
       <div className="play-heading">
         <div><p className="eyebrow">{me?.assisting ? "陪打 · " : room.course && "第 " + room.course.step + " 關 · " + difficultyLabel[room.course.tier] + " · "}
           {roomStation ? floorLabel[roomStation.floor] + " " + roomStation.name : "站點 " + numberOf(room.stationId)}</p>
           <h1>{game.name}</h1></div>
-        {(room.status === "running" || room.status === "countdown") && <div className="play-clock"><RoomClock room={room} offset={offset}/></div>}
+        {inRound && <div className="play-clock"><RoomClock room={room} offset={offset}/></div>}
       </div>
+      {inRound && me?.side != null && <div className="remote-player" data-side={me.side}>
+        <strong>P{me.position} · {sideLabels[me.side]}</strong>
+        <span><Monitor size={18}/> 看大螢幕操作</span>
+      </div>}
       {room.pausedAt != null && <ScreenPauseNotice at={room.pausedAt} offset={offset}/>}
+      {portrait && (inRound || room.status === "lobby") && <RotateGameNotice lockLandscape={lockLandscape}/>}
       {room.status === "lobby" && <>
         <div className="section-line"><h2>{room.match && modeTitle[room.match.mode]}</h2>
           <span className="muted">報到倒數 <Countdown end={room.match?.arrivalDeadline} offset={offset}/></span></div>
         <Members room={room} self={player.player.id}/>
-        <button className={"button full " + (me?.ready ? "secondary" : "primary")} disabled={!online || busy} onClick={() => void run(async () => {
+        <button className={"button full " + (me?.ready ? "secondary" : "primary")} disabled={!online || busy || (portrait && !me?.ready)} onClick={() => void run(async () => {
           update(await request("game:ready", { sessionId: room.id, ready: !me?.ready }));
         })}>{me?.ready ? "取消就緒" : "我已準備好"} <Check size={19}/></button>
         <p className="muted small">至少兩位玩家到場並就緒才可開局。</p>
       </>}
       {room.status === "countdown" && <div className="countdown-center"><p>即將開始</p><RoomClock room={room} offset={offset}/></div>}
-      {(room.status === "countdown" || room.status === "running") && me?.side != null && <div className="remote-player" data-side={me.side}>
-        <strong>P{me.position} · {sideLabels[me.side]}</strong>
-        <span><Monitor size={18}/> 看大螢幕操作</span>
-      </div>}
       {room.status === "running" && <>
         {room.doubleChallenge && <DoubleBanner challenge={room.doubleChallenge} playerId={player.player.id} team={false}/>}
-        {me?.participated && !me.forfeited && online && room.pausedAt == null &&
+        {!portrait && me?.participated && !me.forfeited && online && room.pausedAt == null &&
           <GameControls key={room.id} remote={room.match?.remote ?? {}} controls={game.controls} gameId={game.id} offset={offset} send={send}/>}
         <p className="muted small">{me?.assisting ? "本場陪打記 0 分。" : "每位玩家須操作，這場才會計入個人關卡。"}</p>
       </>}

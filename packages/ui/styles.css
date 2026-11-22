@@ -188,8 +188,12 @@ input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: var(--blue
   padding: 10px 12px; background: #142232; border: 1px solid var(--side-line,var(--line)); border-radius: 8px; }
 .remote-player strong { color: var(--side-ink,var(--blue)); font-variant-numeric: tabular-nums; }
 .remote-player span { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: .875rem; }
+.rotate-game-notice { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 12px;
+  padding: 12px; background: #132537; border: 1px solid #34536a; border-radius: 10px; }
+.rotate-game-notice > svg { color: var(--blue); }
+.rotate-game-notice p { color: var(--muted); font-size: .875rem; }
+.rotate-game-notice .button { grid-column: 1 / -1; }
 .answer-status { min-height: 1.25rem; color: var(--blue); font-size: .875rem; font-weight: 650; font-variant-numeric: tabular-nums; }
-.remote-choices { min-height: min(36svh,320px); align-content: start; }
 .remote-choices .control { min-height: clamp(56px,11svh,96px); font-size: 1.85rem; }
 .remote-panel .control { touch-action: none; }
 .remote-panel .expression-keys { grid-template-columns: repeat(6,minmax(0,1fr)); }
@@ -254,12 +258,6 @@ input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: var(--blue
   .volleyball-stick:hover { border-color: #6895b5; }
   .volleyball-jump:hover { background: #305d7e; }
 }
-@media (pointer: coarse) and (max-width: 640px) and (orientation: portrait) {
-  #root:has(.volleyball-controls,.airhockey-controls) { min-height: 100svh; display: flex; flex-direction: column; }
-  .controller:has(.volleyball-controls,.airhockey-controls),.remote-panel:has(.volleyball-controls,.airhockey-controls) {
-    display: flex; flex: 1; flex-direction: column; }
-  .volleyball-controls,.airhockey-controls { margin-top: auto; }
-}
 .airhockey-stage { display: grid; gap: 12px; width: 100%; }
 .airhockey-hud { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 12px;
   padding: 10px 16px; border-radius: 12px; background: rgba(7, 13, 27, 0.9); border: 1px solid rgba(56, 189, 248, 0.25); }
@@ -300,18 +298,6 @@ input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: var(--blue
   pointer-events: none; transform: translate(var(--stick-x), var(--stick-y)); transition: transform .14s var(--ease); }
 .airhockey-stick[data-dragging="true"] .airhockey-stick-thumb { transition: none; }
 .airhockey-stick-hint { color: var(--muted); font-size: .85rem; text-align: center; }
-@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
-  .controller:has(.volleyball-controls,.airhockey-controls) { padding-block: 8px max(8px, env(safe-area-inset-bottom)); gap: 8px; }
-  .remote-panel:has(.volleyball-controls,.airhockey-controls) { grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); align-items: center; gap: 8px; padding: 12px; }
-  .remote-panel:has(.volleyball-controls,.airhockey-controls) > :not(.play-heading, .remote-player) { grid-column: 1 / -1; }
-  .remote-panel:has(.volleyball-controls,.airhockey-controls) .play-heading h1 { font-size: 1.375rem; line-height: 1.75rem; }
-  .remote-panel:has(.volleyball-controls,.airhockey-controls) .play-clock { font-size: 1.125rem; padding: 4px 6px; }
-  .volleyball-controls { padding-block: 4px 24px; }
-  .volleyball-stick { inline-size: 102px; }
-  .volleyball-jump { inline-size: 88px; }
-  .airhockey-controls { padding-block: 4px 8px; gap: 6px; }
-  .airhockey-stick { inline-size: 110px; }
-}
 @media (max-width: 520px) {
   .airhockey-hud { gap: 8px; padding: 8px; }
   .airhockey-team,.airhockey-center,.airhockey-pips { gap: 5px; }
@@ -320,7 +306,7 @@ input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: var(--blue
 .host-side-roster { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
 .host-side-roster > div { display: grid; gap: 5px; padding: 10px 14px; border: 1px solid var(--side-line); border-radius: 8px; }
 .host-side-roster .arena-side-names { justify-content: center; }
-@media (max-width: 760px) {
+@media (max-width: 760px) and (orientation: portrait) {
   .arena-panels,.arena-panels[data-sides="3"] { --arena-columns: 1; }
   .arena-board { min-height: 0; }
 }
@@ -434,15 +420,14 @@ button.tile:hover { box-shadow: inset 0 0 0 2px var(--blue); }
 .bricks span:nth-child(5n + 2),.bricks span:nth-child(5n + 4) { background: #48a591; }
 .bricks .broken { opacity: .14; }
 .control { user-select: none; min-height: 46px; text-align: center; }
-.options,.keypad,.expression-keys,.action-controls { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0,1fr)); }
+.options,.keypad,.expression-keys,.action-controls,.flight-movement { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0,1fr)); }
 .keypad { grid-template-columns: repeat(3,minmax(0,1fr)); }
 .expression-keys { grid-template-columns: repeat(4,minmax(0,1fr)); }
-.action-controls { grid-template-columns: repeat(auto-fit,minmax(74px,1fr)); }
 .action-controls .control { min-height: 56px; padding-inline: 8px; }
 .control-primary { background: #264e69; border-color: #4382a5; }
 .answer-form { display: grid; gap: 8px; min-inline-size: 0; padding: 0; margin: 0; border: 0; }
 .answer-form input { font-size: 1rem; }
-.answer-keys { display: grid; gap: 8px; }
+.answer-entry,.answer-keys { display: grid; gap: 8px; min-width: 0; }
 .direction-controls { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
 .dpad { display: grid; grid-template-columns: repeat(3,minmax(46px,56px)); grid-template-rows: repeat(2,46px); gap: 6px; }
 .dpad .control { padding: 0; }
@@ -564,8 +549,6 @@ button.tile:hover { box-shadow: inset 0 0 0 2px var(--blue); }
   .host-aside { grid-template-columns: 1fr; }
   .controller { padding-top: 12px; }
   .join-panel,.play-panel,.queue-panel,.result-panel { padding: 16px; }
-  .controller-playing .board { max-height: 45svh; width: min(100%, 330px); }
-  .controller-playing .tile-label { font-size: .75rem; }
   .host-top,.host-top-actions { gap: 8px; flex-wrap: wrap; }
   .host-top-actions { margin-left: 0; }
   .host-game,.host-join,.host-members { padding: 16px; }
@@ -575,19 +558,72 @@ button.tile:hover { box-shadow: inset 0 0 0 2px var(--blue); }
   .admin-panel { padding: 12px; }
   .admin-panel .section-line { flex-wrap: wrap; }
 }
-@media (max-width: 520px) and (max-height: 700px) {
-  .controller:has(.airhockey-controls) { padding-block: 8px max(8px, env(safe-area-inset-bottom)); gap: 8px; }
-  .remote-panel:has(.airhockey-controls) { gap: 8px; padding: 12px; }
-  .remote-panel:has(.airhockey-controls) .play-heading h1 { font-size: 1.5rem; line-height: 1.875rem; }
-  .remote-panel:has(.airhockey-controls) .play-clock { font-size: 1.375rem; padding: 4px 6px; }
-  .airhockey-controls { padding-block: 6px 8px; gap: 6px; }
-  .airhockey-stick { inline-size: clamp(124px, 40vw, 156px); }
-  .remote-panel[data-expression] { gap: 8px; }
-  .remote-panel[data-expression] .play-heading h1 { font-size: 1.75rem; line-height: 2rem; }
-  .remote-panel[data-expression] .answer-keys,
-  .remote-panel[data-expression] .answer-keys > div { gap: 5px; }
-  .remote-panel[data-expression] .keypad { grid-template-columns: repeat(4,minmax(0,1fr)); }
-  .remote-panel[data-expression] .answer-keys .control { padding-inline: 0; }
+@media (orientation: landscape) and (min-width: 480px) {
+  .controller-match { width: min(100%, 900px); padding-inline: max(12px,env(safe-area-inset-left)) max(12px,env(safe-area-inset-right)); }
+  .controller-match:is([data-round="countdown"],[data-round="running"]) .remote-panel {
+    grid-template-columns: minmax(0,1.2fr) minmax(0,1fr); align-items: center;
+  }
+  .controller-match .remote-panel > :not(.play-heading,.remote-player) { grid-column: 1 / -1; }
+  .remote-panel .play-heading h1 { font-size: clamp(1.375rem,4vw,2.5rem); }
+  .remote-choices { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0,1fr); }
+  .remote-choices .control { min-height: clamp(72px,24svh,120px); }
+  .answer-status:empty { display: none; }
+  .answer-form { grid-template-columns: minmax(0,1fr) minmax(0,2.25fr); grid-template-areas: "entry keys" "confirm keys"; align-items: start; }
+  .answer-entry { grid-area: entry; }
+  .answer-keys { grid-area: keys; }
+  .answer-form > .button { grid-area: confirm; }
+  .answer-keys .keypad { grid-template-columns: repeat(6,minmax(0,1fr)); }
+  .answer-keys .control { padding-inline: 0; }
+  .direction-controls { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); justify-items: start; }
+  .direction-controls > :not(.dpad) { justify-self: end; }
+  .direction-controls > .control { min-width: min(100%,120px); }
+  .dpad { --key-size: clamp(52px, 16svh, 72px); grid-template-columns: repeat(3,var(--key-size)); grid-template-rows: repeat(2,var(--key-size)); }
+  .action-controls .control { min-height: clamp(64px,20svh,104px); }
+}
+@media (orientation: landscape) and (max-height: 550px) {
+  #root:has(.controller-match:is([data-round="countdown"],[data-round="running"])) > .topbar { display: none; }
+  .controller-match { padding-block: max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-bottom)); gap: 6px; }
+  .controller-match .controller-id { padding: 4px 10px; }
+  .controller-match .remote-panel { padding: 10px 12px; gap: 8px; }
+  .controller-match .remote-player { padding: 6px 8px; }
+  .controller-match .play-clock { font-size: 1.25rem; padding: 4px 8px; }
+  .controller-match .countdown-center { min-height: 132px; }
+  .controller-match .countdown-center .clock { font-size: 4rem; }
+  .controller-match .answer-keys,.controller-match .answer-keys > div { gap: 5px; }
+  .controller-match .volleyball-controls { padding: 6px 6px 24px; }
+  .controller-match .volleyball-stick { inline-size: clamp(110px,38svh,152px); }
+  .controller-match .volleyball-jump { inline-size: clamp(92px,30svh,120px); }
+  .controller-match .airhockey-controls { gap: 6px; padding-block: 4px; }
+  .controller-match .airhockey-stick { inline-size: clamp(112px,42svh,170px); }
+  .controller-match[data-round="running"] .practice-controls { justify-content: flex-end; padding-top: 6px; }
+  .controller-match .round-outcome { min-height: 132px; }
+  .host-display { padding-block: 10px; }
+  .host-top { padding-bottom: 8px; }
+  .host-layout,.host-aside { gap: 10px; }
+  .host-game,.host-join,.host-members { gap: 8px; padding: 10px; }
+  .host-game { min-height: 0; }
+  .host-title h1 { margin-top: 2px; font-size: clamp(1.75rem,4vw,2.5rem); }
+  .host-clock { gap: 1px; }
+  .host-clock .clock { font-size: clamp(2rem,5vw,3rem); }
+  .host-stage,.host-scene,.practice-display .practice-idle { min-height: min(220px,62svh); gap: 8px; }
+  .host-stage .clock { font-size: 4rem; }
+  .arena-panels,.arena-panel,.arena-board .quiz { gap: 6px; }
+  .arena-panel { padding: 6px; }
+  .arena-panel header { gap: 2px; }
+  .arena-side-names { font-size: .8125rem; }
+  .arena-board { min-height: 0; }
+  .arena-board .board { width: min(100%,50svh,460px); }
+  .arena-board .arcade { width: min(100%,70svh,460px); }
+  .arena-board .quiz-prompt { min-height: 0; padding: 6px 2px; }
+  .arena-options > div { padding: 4px; }
+  .arena-board .glass { height: min(120px,32svh); }
+  .volleyball-stage,.airhockey-stage { gap: 6px; }
+  .volleyball-hud,.airhockey-hud { padding: 6px 8px; }
+  .volleyball-canvas,.airhockey-canvas { width: min(100%,max(240px,calc(200svh - 340px))); justify-self: center; }
+}
+@media (orientation: landscape) and (min-width: 720px) and (max-width: 800px) {
+  .host-layout { grid-template-columns: minmax(0,1fr) minmax(175px,.38fr); }
+  .host-aside { grid-template-columns: minmax(0,1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }

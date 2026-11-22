@@ -198,20 +198,21 @@ function QuizControls({ remote, isExpression, offset, send }: {
       if (answer) void submit({ kind: "answer", questionId, value: answer });
     }}>
       <fieldset className="answer-form" disabled={locked}>
-        <label htmlFor="answer">{isExpression ? "輸入算式" : "輸入答案"}</label>
-        <input id="answer" inputMode={isExpression ? "none" : "numeric"} value={value} maxLength={64}
-          autoComplete="off" onChange={event => setValue(event.target.value)} placeholder={isExpression ? "把四個數字各用一次" : "答案"}/>
-        {isExpression && confirm}
+        <div className="answer-entry">
+          <label htmlFor="answer">{isExpression ? "輸入算式" : "輸入答案"}</label>
+          <input id="answer" inputMode="none" value={value} maxLength={64}
+            autoComplete="off" onChange={event => setValue(event.target.value)} placeholder={isExpression ? "把四個數字各用一次" : "答案"}/>
+        </div>
         <div className="answer-keys">
           {isExpression && <div className="expression-keys">{["+","−","×","÷","(",")"].map(operator =>
             <button className="control" type="button" key={operator} onClick={() => append(operator)}>{operator}</button>)}</div>}
           <div className="keypad">
             {keys.map(key => <button type="button" className="control" key={key} onClick={() => append(key)}>{key}</button>)}
-            <button type="button" className="control" aria-label="刪除" onClick={() => setValue(value.slice(0, -1))}><Eraser size={20}/></button>
+            <button type="button" className="control" aria-label="刪除" onClick={() => setValue(previous => previous.slice(0, -1))}><Eraser size={20}/></button>
             <button type="button" className="control" onClick={() => setValue("")}>清除</button>
           </div>
         </div>
-        {!isExpression && confirm}
+        {confirm}
       </fieldset>
     </form>}
   </>;
@@ -247,9 +248,11 @@ export function GameControls({ remote, controls, gameId, offset, send }: {
   }
   if (controls === "flight" || controls === "runner") return <div className="action-controls">
     {controls === "flight" ? <>
-      <ActionButton repeat send={send} action={{ kind: "move", direction: "left" }} label="向左"><ArrowLeft size={28}/></ActionButton>
+      <div className="flight-movement" role="group" aria-label="移動">
+        <ActionButton repeat send={send} action={{ kind: "move", direction: "left" }} label="向左"><ArrowLeft size={28}/></ActionButton>
+        <ActionButton repeat send={send} action={{ kind: "move", direction: "right" }} label="向右"><ArrowRight size={28}/></ActionButton>
+      </div>
       <ActionButton repeat send={send} action={{ kind: "action", action: "shoot" }} label="發射" className="control-primary"><Crosshair size={24}/> 發射</ActionButton>
-      <ActionButton repeat send={send} action={{ kind: "move", direction: "right" }} label="向右"><ArrowRight size={28}/></ActionButton>
     </> : <>
       <ActionButton send={send} action={{ kind: "action", action: "duck" }} label="蹲下"><CaretDoubleDown size={24}/> 蹲下</ActionButton>
       <ActionButton send={send} action={{ kind: "action", action: "jump" }} label="跳躍" className="control-primary"><ArrowUp size={24}/> 跳躍</ActionButton>
