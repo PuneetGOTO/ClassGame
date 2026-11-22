@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { GAMES } from "../packages/shared/catalog";
 import type { Action, Board, Quiz } from "../packages/shared/protocol";
+import { ANSWER_COOLDOWN_MS } from "../packages/shared/rules";
 import { Arena } from "../apps/server/src/arena";
 import { plugins } from "../local-games/registry";
 import { isPrime } from "../local-games/game-12";
@@ -24,9 +25,9 @@ test("each of the 20 plugins supplies symmetric but independently controlled sid
     const opponent = match.panel(1);
     assert.ok(first.scene, game.name);
     assert.deepEqual(opponent.scene, first.scene, game.name);
-    if (first.scene.kind === "quiz") assert.equal(JSON.stringify(match.remote(0)).includes("text"), false, game.name);
-    else assert.deepEqual(match.remote(0), {}, game.name);
-    assert.equal(match.input(0, { kind: "cell", index: 0 }, 0, 0).changed, false);
+    if (first.scene.kind === "quiz") assert.equal(JSON.stringify(match.remote(0, "p1")).includes("text"), false, game.name);
+    else assert.deepEqual(match.remote(0, "p1"), {}, game.name);
+    assert.equal(match.input(0, "p1", { kind: "cell", index: 0 }, 0, 0).changed, false);
     const restored = new Arena(plugins.get(game.id)!, game.id, 57, 2, [0, 1], match.serialize());
     assert.deepEqual(restored.panel(0), first);
     assert.deepEqual(restored.panel(1), opponent);
@@ -51,7 +52,7 @@ for (const number of ["01","03","10","14","18"]) test("HOST-" + number + " accep
     const side = room().members.find(member => member.id === a.id)!.side;
     const screen = () => service.panel(a.id).scene!;
     const input = async (action: Action) => {
-      service.step(90);
+      service.step(action.kind === "choice" || action.kind === "answer" ? ANSWER_COOLDOWN_MS : 90);
       await service.control(a, action);
     };
     if (number === "01") {
@@ -84,7 +85,7 @@ for (const number of ["01","03","10","14","18"]) test("HOST-" + number + " accep
   } finally { await service.close(); }
 });
 
-test("in 2 vs 2 both teammates steer the same side and only that side advances", async () => {
+test("in 2 vs 2 teammates share progress but each has a separate two-second answer wait", async () => {
   const service = await harness();
   try {
     await service.host("HOST-10");
@@ -101,9 +102,22 @@ test("in 2 vs 2 both teammates steer the same side and only that side advances",
     for (const player of orange) await service.control(player, { kind: "choice", questionId: service.panel(player.id).scene!.kind === "quiz"
       ? (service.panel(player.id).scene as Quiz).prompt!.id : orangeAnswer.id, index: 0 });
     const frozen = snapshot()[1].scene;
+    const remote = (player: typeof blue[number]) => service.campus.playerView(player.id).room!.match!.remote!;
     for (let i = 0; i < 4; i++) {
       const scene = snapshot()[0].scene as Quiz;
+      if (i === 2) {
+        const availableAt = service.time() + ANSWER_COOLDOWN_MS;
+        assert.deepEqual(blue.map(player => remote(player).answerAvailableAt), [availableAt, availableAt]);
+        service.step(ANSWER_COOLDOWN_MS - 1);
+        const early = await send(blue[0].socket, "game:input", { sessionId: room.id, seq: 2,
+          action: answer(scene, arithmetic(scene.prompt!)) });
+        assert.ok(!early.ok && early.code === "answer-cooldown");
+        assert.equal((snapshot()[0].scene as Quiz).attempted, 2);
+        assert.equal(remote(blue[0]).answerAvailableAt, availableAt);
+        service.step(1);
+      }
       await service.control(blue[i % 2], answer(scene, arithmetic(scene.prompt!)));
+      if (i === 0) assert.equal(remote(blue[1]).answerAvailableAt, undefined);
       if (i < 3) assert.equal((snapshot()[0].scene as Quiz).correct,i+1);
       assert.deepEqual(snapshot()[1].scene,frozen);
     }
@@ -124,6 +138,7 @@ test("a completed prime quiz records a tie and sends both phones results before 
     const started = await service.begin([a,b], lobby.stationId);
     for (const player of [a,b]) {
       for (let i = 0; i < 5; i++) {
+        if (i > 0) service.step(ANSWER_COOLDOWN_MS);
         const scene = service.panel(player.id).scene as Quiz;
         const number = Number(scene.prompt!.text.match(/\d+/)![0]);
         const prime = i < 3 ? isPrime(number) : !isPrime(number);

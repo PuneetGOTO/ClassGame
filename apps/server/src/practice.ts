@@ -80,7 +80,7 @@ export class Practice {
       ...(role === "screen" ? {
         entries: this.entries(),
         ...(state?.status === "running" && { panels: [state.arena.panel(0), state.arena.panel(1)] })
-      } : { remote: state?.status === "running" ? state.arena.remote(sideOf[role]) : {} })
+      } : { remote: state?.status === "running" ? state.arena.remote(sideOf[role], role) : {} })
     };
   }
 
@@ -157,8 +157,8 @@ export class Practice {
     }
     if (!this.peers.has("screen")) throw new RequestError("請讓測試大螢幕重新連線", "host-offline", 409);
     if (seq <= round.sequence[role]) return { seq: round.sequence[role] };
+    const change = round.arena.input(sideOf[role], role, action, now - round.startedAt, now);
     round.sequence[role] = seq;
-    const change = round.arena.input(sideOf[role], action, now - round.startedAt, now);
     const result = round.arena.result(bothSides);
     if (result) this.finish(round, result);
     if (change.changed || result) this.publish();

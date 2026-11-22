@@ -120,7 +120,7 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
         if (!(error instanceof RequestError)) campus.recordError(error, "socket " + socket.id);
         const value = errorValue(error);
         if (typeof ack === "function") ack({ ok: false, ...value });
-        else if (!["rate", "not-running"].includes(value.code)) socket.emit("system:error", value);
+        else if (!["rate", "not-running", "answer-cooldown"].includes(value.code)) socket.emit("system:error", value);
         if (error instanceof RequestError && error.status === 401 && ++attempts > 8) socket.disconnect(true);
       }
     };

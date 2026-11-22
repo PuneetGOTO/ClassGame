@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { COUNTDOWN_MS, GAME_MS, GAMES } from "../packages/shared/catalog";
 import type { PracticeView } from "../packages/shared/practice";
 import type { Action, MatchPanel } from "../packages/shared/protocol";
-import { STATION_QR_MS } from "../packages/shared/rules";
+import { ANSWER_COOLDOWN_MS, STATION_QR_MS } from "../packages/shared/rules";
 import { harness, ok, send } from "./socket-helper";
 
 function code(view: PracticeView, seat: "P1" | "P2") {
@@ -80,6 +80,18 @@ test("two private test accounts can switch games and replay on one display witho
     const resumed = await ok(restored, "practice:join", { role: "P1", credential: one.token });
     assert.equal(resumed.view.round?.id, displayed.round?.id);
     assert.equal(resumed.view.seq, 1);
+    const nextChoice = { ...input, seq: 2, action: { ...input.action, questionId: resumed.view.remote!.questionId! } };
+    assert.equal(resumed.view.remote?.answerAvailableAt, service.time() + ANSWER_COOLDOWN_MS);
+    const opponent = await ok(second, "practice:select", { gameId: "game-10" });
+    assert.equal(opponent.remote?.answerAvailableAt, undefined);
+    await ok(second, "practice:input", { ...input, action: { ...input.action, questionId: opponent.remote!.questionId! } });
+    service.step(ANSWER_COOLDOWN_MS - 1);
+    const early = await send(restored, "practice:input", nextChoice);
+    assert.ok(!early.ok && early.code === "answer-cooldown");
+    service.step(1);
+    await ok(restored, "practice:input", nextChoice);
+    const afterWait = await ok(screen, "practice:select", { gameId: "game-10" });
+    assert.deepEqual(afterWait.panels?.map(panel => panel.scene?.kind === "quiz" ? panel.scene.attempted : null), [2, 1]);
     service.step(GAME_MS);
     const ended = await ok(screen, "practice:select", { gameId: "game-10" });
     assert.equal(ended.round?.status, "finished");
@@ -110,6 +122,7 @@ test("the last pair of fraction answers settles immediately even when both miss 
     const started = await ok(first, "practice:start", null);
     service.step(COUNTDOWN_MS);
     const answer = async (client: typeof first, side: number, index: number, correct: boolean) => {
+      if (index > 0) service.step(ANSWER_COOLDOWN_MS);
       const current = await ok(screen, "practice:select", { gameId });
       const scene = current.panels![side].scene;
       assert.ok(scene?.kind === "quiz" && scene.prompt);

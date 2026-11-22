@@ -39,6 +39,8 @@ Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入
 
 客戶端請求回覆為 `{ ok: true, data }` 或 `{ ok: false, code, error }`。正式結算事件由伺服器傳送。`game:input` 接受角色移動 `move`、游標 `cursor`、動作 `action`、選項 `choice`、文字答案 `answer`。伺服器比對當前題目 ID、玩家陣營及場次。管理 API 的路由與權限位於 [service.ts](../apps/server/src/service.ts)。
 
+答題經伺服器接受後，該玩家須等候 2,000 毫秒才能再送出答案。正式賽的 `match.remote` 和練習房的 `remote` 傳回個人的 `answerAvailableAt`。提早送出目前題目的答案會收到 `answer-cooldown`。同方其他手機各自計時。
+
 `station:scan` 依伺服器時間驗證房間、大螢幕目前的連線及 10 秒有效期。驗證成功後，該手機連線有最多 90 秒使用該入場資格，受本場報到時限約束。每位玩家掃描配對房間的 QR Code 後可標記準備。至少兩人報到並就緒才可倒數。
 
 `player:update` 的 `route` 傳送完成關數、配對狀態和下一站。大螢幕收到 `match.panels`，手機收到 `match.remote`。相同種子讓各方的初始盤面或題組一致，手機輸入只影響該玩家的陣營。

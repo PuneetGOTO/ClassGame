@@ -69,13 +69,14 @@ export function Practice({ connection }: { connection: CampusConnection }) {
     };
   }, [update]);
 
-  function send(action: Action) {
+  async function send(action: Action) {
     const current = active.current;
     if (current?.round?.status !== "running" || !current.screenOnline || !socket.connected) return;
-    void request("practice:input", { sessionId: current.round.id, seq: ++seq.current, action }).catch(failure => {
-      if (failure instanceof RemoteError && ["not-running", "rate"].includes(failure.code)) return;
+    try { await request("practice:input", { sessionId: current.round.id, seq: ++seq.current, action }); }
+    catch (failure) {
+      if (failure instanceof RemoteError && ["not-running", "rate", "answer-cooldown"].includes(failure.code)) return;
       setError(message(failure));
-    });
+    }
   }
   async function run(change: () => Promise<PracticeView>) {
     setBusy(true);
@@ -130,7 +131,7 @@ export function Practice({ connection }: { connection: CampusConnection }) {
         {online && !view.screenOnline && <p className="notice">等待測試大螢幕連線</p>}
         {round?.status === "finished" && <RoundOutcome winner={round.winner} reason={round.reason} side={side}/>}
         {online && view.screenOnline && round?.status === "running" &&
-          <GameControls key={round.id} remote={view.remote ?? {}} controls={game.controls} gameId={game.id} send={send}/>}
+          <GameControls key={round.id} remote={view.remote ?? {}} controls={game.controls} gameId={game.id} offset={offset} send={send}/>}
         {controls}
       </section>
       <button type="button" className="text-button" onClick={leave}>登出 {role}</button>

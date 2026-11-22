@@ -185,6 +185,9 @@ try {
   }
   await tapAnswer(winners[0], winnerBoard);
   await attempted(winnerBoard, 1);
+  await phone.getByText(/請等候 [12] 秒再作答/).waitFor();
+  assert.equal(await phone.getByRole("button", { name: "A", exact: true }).isDisabled(), true);
+  assert.equal(await winners[1].page.getByRole("button", { name: "A", exact: true }).isEnabled(), true);
   await host.getByText(/抽中雙倍挑戰/).waitFor({ timeout: 18_000 });
   for (let i = 1; i < 4; i++) {
     await tapAnswer(winners[i % 2], winnerBoard);
@@ -284,11 +287,33 @@ try {
     await practicePhones[0].getByRole("button", { name: "A", exact: true }).tap();
     await eventually(async () => assert.equal(await practiceScreen.locator(".arena-panel").first()
       .locator(".quiz-meta strong").first().innerText(), "1"));
+    await practicePhones[0].getByText(/請等候 [12] 秒再作答/).waitFor();
+    assert.equal(await practicePhones[0].getByRole("button", { name: "A", exact: true }).isDisabled(), true);
+    assert.equal(await practicePhones[1].getByRole("button", { name: "A", exact: true }).isEnabled(), true);
+    await practicePhones[1].getByRole("button", { name: "A", exact: true }).tap();
+    await attempted(practiceScreen.locator(".arena-panel").nth(1), 1);
     assert.equal(await practicePhones[0].locator(".quiz-prompt, .board, .arena-panel").count(), 0);
     if (process.env.CAMPUS_SCREENSHOTS) {
       await practiceScreen.screenshot({ path: "test-results/practice-screen.png", animations: "disabled" });
       await practicePhones[0].screenshot({ path: "test-results/practice-controller.png", animations: "disabled" });
     }
+    await practicePhones[0].getByRole("button", { name: "結束這局" }).tap();
+    await practicePhones[0].getByLabel("選擇遊戲").selectOption("game-11");
+    await practicePhones[1].getByRole("heading", { name: "二十四點", exact: true }).waitFor();
+    await practiceScreen.getByRole("button", { name: "開始測試" }).click();
+    const expression = practicePhones[0].getByRole("textbox", { name: "輸入算式" });
+    await expression.fill("1");
+    await practicePhones[0].getByRole("button", { name: "確認答案" }).tap();
+    await practicePhones[0].getByText(/請等候 [12] 秒再作答/).waitFor();
+    assert.equal(await expression.isDisabled(), true);
+    assert.equal(await practicePhones[0].getByRole("button", { name: "+", exact: true }).isDisabled(), true);
+    assert.equal(await practicePhones[1].getByRole("textbox", { name: "輸入算式" }).isEnabled(), true);
+    if (process.env.CAMPUS_SCREENSHOTS) {
+      await practicePhones[0].screenshot({ path: "test-results/practice-answer-wait.png", animations: "disabled" });
+    }
+    await expression.fill("2");
+    await practicePhones[0].getByRole("button", { name: "確認答案" }).tap();
+    await attempted(practiceScreen.locator(".arena-panel").first(), 2);
     await practicePhones[0].getByRole("button", { name: "結束這局" }).tap();
     await practicePhones[1].getByLabel("選擇遊戲").selectOption("game-03");
     await practiceScreen.getByRole("heading", { name: "水管拼接", exact: true }).waitFor();

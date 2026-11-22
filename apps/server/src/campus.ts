@@ -115,7 +115,7 @@ export class Campus {
       match: {
         mode: matchMode(members.size), arrivalDeadline: row.created_at + MATCH_ARRIVAL_MS, winner: row.winner_side ?? null,
         ...(viewer
-          ? { remote: playing && member?.side != null ? arena?.remote(member.side) ?? {} : {} }
+          ? { remote: playing && member?.side != null ? arena?.remote(member.side, viewer) ?? {} : {} }
           : { panels: playing ? sides.map(side => arena!.panel(side)) : [] })
       }
     };
@@ -519,7 +519,7 @@ export class Campus {
       throw new RequestError("目前不能操作此場次", "not-running", 409);
     }
     if (!this.hosts.has(room.row.host_id)) throw new RequestError("正在等候房間大螢幕重新連線", "host-offline", 409);
-    const change = room.arena!.input(member.side, action, now - room.row.started_at!, now);
+    const change = room.arena!.input(member.side, id, action, now - room.row.started_at!, now);
     if (change.changed) {
       this.checkpoint(room, { member, seq, played: change.played });
       if (!this.checkResult(room, now)) this.pushRoom(room);

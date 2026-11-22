@@ -105,7 +105,7 @@ export type SideCompletion = "cleared" | "exhausted";
 export interface MatchPanel {
   side: number; scene: Scene | null; progress: Progress | null; cursor: number | null; completion?: SideCompletion;
 }
-export interface RemoteControls { questionId?: number; choices?: number; completion?: SideCompletion }
+export interface RemoteControls { questionId?: number; choices?: number; completion?: SideCompletion; answerAvailableAt?: number }
 export interface MatchView {
   mode: MatchMode; arrivalDeadline: number; winner: number | null;
   panels?: MatchPanel[]; remote?: RemoteControls;

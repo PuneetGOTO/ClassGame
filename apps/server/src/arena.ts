@@ -2,9 +2,15 @@ import { gameById, type Controls } from "../../../packages/shared/catalog";
 import { neighbor, type Frame, type PluginFactory } from "../../../packages/game-sdk";
 import type { Action, MatchEndReason, MatchPanel, RemoteControls, SideCompletion } from "../../../packages/shared/protocol";
 import type { Difficulty, MatchMode } from "../../../packages/shared/route";
+import { ANSWER_COOLDOWN_MS } from "../../../packages/shared/rules";
+import { RequestError } from "./store";
 
-interface SideSnapshot { side: number; engine: string; cursor: number | null; wonAt: number | null }
-interface Side extends Omit<SideSnapshot, "engine"> { engine: ReturnType<PluginFactory>; completion?: SideCompletion }
+interface SideSnapshot {
+  side: number; engine: string; cursor: number | null; wonAt: number | null; answerTimes?: [string, number][];
+}
+interface Side extends Omit<SideSnapshot, "engine" | "answerTimes"> {
+  engine: ReturnType<PluginFactory>; completion?: SideCompletion; answerTimes: Map<string, number>;
+}
 export interface ArenaResult { winner: number | null; reason: MatchEndReason }
 const sideKey = (side: number) => "side-" + side;
 
@@ -21,7 +27,10 @@ export class Arena {
     for (const side of new Set(sides)) {
       const snapshot = snapshots.find(item => item.side === side);
       const engine = factory({ seed, tier, playerIds: [sideKey(side)] }, snapshot?.engine);
-      const panel: Side = { side, engine, cursor: snapshot?.cursor ?? null, wonAt: snapshot?.wonAt ?? null };
+      const panel: Side = {
+        side, engine, cursor: snapshot?.cursor ?? null, wonAt: snapshot?.wonAt ?? null,
+        answerTimes: new Map(snapshot?.answerTimes)
+      };
       if (panel.wonAt !== null) panel.completion = "cleared";
       else if (snapshot && engine.isComplete()) panel.completion = "exhausted";
       if (!saved && ["cell", "traffic"].includes(this.controls)) {
@@ -73,7 +82,7 @@ export class Arena {
     return true;
   }
 
-  input(sideIndex: number, action: Action, elapsed: number, now: number) {
+  input(sideIndex: number, playerId: string, action: Action, elapsed: number, now: number) {
     const side = this.sides.get(sideIndex);
     if (!side || side.completion) return { changed: false, played: false };
     const key = sideKey(sideIndex);
@@ -94,6 +103,9 @@ export class Arena {
         if (!option) return { changed: false, played: false };
         input = { kind: "answer", questionId: action.questionId, value: option.value };
       } else if (prompt.options) return { changed: false, played: false };
+      if (now < (side.answerTimes.get(playerId) ?? 0)) {
+        throw new RequestError("請等候 2 秒再作答", "answer-cooldown", 429);
+      }
     } else if (action.kind === "action" && action.action === "interact" && side.cursor !== null) {
       input = { kind: "cell", index: side.cursor };
     }
@@ -107,7 +119,10 @@ export class Arena {
         if (index >= 0) side.cursor = index;
       }
     }
-    if (accepted) this.updateCompletion(side, now);
+    if (accepted) {
+      if (input.kind === "answer") side.answerTimes.set(playerId, now + ANSWER_COOLDOWN_MS);
+      this.updateCompletion(side, now);
+    }
     return { changed: accepted, played: accepted };
   }
 
@@ -134,11 +149,14 @@ export class Arena {
     };
   }
 
-  remote(side: number): RemoteControls {
-    const panel = this.panel(side);
+  remote(sideIndex: number, playerId: string): RemoteControls {
+    const panel = this.panel(sideIndex);
     if (panel.completion) return { completion: panel.completion };
     const prompt = panel.scene?.kind === "quiz" ? panel.scene.prompt : undefined;
-    return prompt ? { questionId: prompt.id, choices: prompt.options?.length } : {};
+    return prompt ? {
+      questionId: prompt.id, choices: prompt.options?.length,
+      answerAvailableAt: this.sides.get(sideIndex)?.answerTimes.get(playerId)
+    } : {};
   }
 
   result(eligible: ReadonlySet<number>, timeUp = false): ArenaResult | undefined {
@@ -166,7 +184,7 @@ export class Arena {
   }
 
   serialize() {
-    return JSON.stringify([...this.sides.values()].map(({ side, engine, cursor, wonAt }): SideSnapshot =>
-      ({ side, engine: engine.serialize(), cursor, wonAt })));
+    return JSON.stringify([...this.sides.values()].map(({ side, engine, cursor, wonAt, answerTimes }): SideSnapshot =>
+      ({ side, engine: engine.serialize(), cursor, wonAt, ...(answerTimes.size && { answerTimes: [...answerTimes] }) })));
   }
 }

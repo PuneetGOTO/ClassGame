@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DOUBLE_END_MS } from "../packages/shared/rules";
+import { ANSWER_COOLDOWN_MS, DOUBLE_END_MS } from "../packages/shared/rules";
 import type { DoubleChallenge, Quiz } from "../packages/shared/protocol";
 import { harness, ok } from "./socket-helper";
 import { arithmetic } from "./solve";
@@ -43,7 +43,7 @@ test("one active controller draws the weighted challenge and its opponent can wi
     const winning = losing === a ? b : a;
     while (service.campus.playerView(winning.id).room) {
       const scene = service.panel(winning.id).scene as Quiz;
-      service.step(90);
+      service.step(ANSWER_COOLDOWN_MS);
       await service.control(winning, arithmetic(scene.prompt!));
     }
     const result = service.store.resultsForSession(lobby.id);

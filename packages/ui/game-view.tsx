@@ -133,38 +133,68 @@ function ActionButton({ action, send, children, label, className = "", repeat = 
   >{children}</button>;
 }
 
-function QuizControls({ remote, isExpression, send }: { remote: RemoteControls; isExpression: boolean; send: (action: Action) => void }) {
+function QuizControls({ remote, isExpression, offset, send }: {
+  remote: RemoteControls; isExpression: boolean; offset: number; send: (action: Action) => Promise<void>;
+}) {
+  const { questionId, choices, answerAvailableAt = 0 } = remote;
   const [value, setValue] = useState("");
-  const questionId = remote.questionId;
+  const [now, setNow] = useState(Date.now);
+  const [submitting, setSubmitting] = useState(false);
+  const inFlight = useRef(false);
+  useEffect(() => {
+    if (!answerAvailableAt) return;
+    let timer: ReturnType<typeof setTimeout>;
+    function update() {
+      const time = Date.now();
+      const remaining = answerAvailableAt - time - offset;
+      setNow(time);
+      if (remaining > 0) timer = setTimeout(update, remaining % 1000 || 1000);
+    }
+    update();
+    return () => clearTimeout(timer);
+  }, [answerAvailableAt, offset]);
+
   if (questionId === undefined) return <p className="muted">等候題目。</p>;
-  const submit = () => {
-    if (!value.trim()) return;
-    send({ kind: "answer", questionId, value: value.trim() });
-    setValue("");
-  };
-  if (remote.choices) return <div className="options remote-choices" aria-label="答題按鍵">
-    {optionLetters.slice(0, remote.choices).map((letter, index) => <button type="button" className="control" key={letter}
-      onClick={() => send({ kind: "choice", questionId, index })}>{letter}</button>)}
-  </div>;
+  const seconds = Math.max(0, Math.ceil((answerAvailableAt - now - offset) / 1000));
+  const locked = submitting || seconds > 0;
+  async function submit(action: Action) {
+    if (inFlight.current || Date.now() + offset < answerAvailableAt) return;
+    inFlight.current = true;
+    setSubmitting(true);
+    try { await send(action); }
+    finally { inFlight.current = false; setSubmitting(false); }
+  }
   const keys = ["1","2","3","4","5","6","7","8","9","0"];
   const append = (key: string) => setValue(previous => (previous + key).slice(0, 64));
-  return <form className="answer-form" onSubmit={event => { event.preventDefault(); submit(); }}>
-    <label htmlFor="answer">{isExpression ? "輸入算式" : "輸入答案"}</label>
-    <input id="answer" inputMode={isExpression ? "text" : "numeric"} value={value} maxLength={64}
-      autoComplete="off" onChange={event => setValue(event.target.value)} placeholder={isExpression ? "把四個數字各用一次" : "答案"}/>
-    {isExpression && <div className="expression-keys">{["+","−","×","÷","(",")"].map(operator =>
-      <button className="control" type="button" key={operator} onClick={() => append(operator)}>{operator}</button>)}</div>}
-    <div className="keypad">
-      {keys.map(key => <button type="button" className="control" key={key} onClick={() => append(key)}>{key}</button>)}
-      <button type="button" className="control" aria-label="刪除" onClick={() => setValue(value.slice(0, -1))}><Eraser size={20}/></button>
-      <button type="button" className="control" onClick={() => setValue("")}>清除</button>
-    </div>
-    <button type="submit" className="button primary full" disabled={!value.trim()}>確認答案</button>
-  </form>;
+  return <>
+    <p className="answer-status" role="status">{seconds ? `請等候 ${seconds} 秒再作答` : submitting ? "正在送出答案…" : ""}</p>
+    {choices ? <div className="options remote-choices" role="group" aria-label="答題按鍵">
+      {optionLetters.slice(0, choices).map((letter, index) => <button type="button" className="control" key={letter} disabled={locked}
+        onClick={() => void submit({ kind: "choice", questionId, index })}>{letter}</button>)}
+    </div> : <form onSubmit={event => {
+      event.preventDefault();
+      const answer = value.trim();
+      if (answer) void submit({ kind: "answer", questionId, value: answer });
+    }}>
+      <fieldset className="answer-form" disabled={locked}>
+        <label htmlFor="answer">{isExpression ? "輸入算式" : "輸入答案"}</label>
+        <input id="answer" inputMode={isExpression ? "text" : "numeric"} value={value} maxLength={64}
+          autoComplete="off" onChange={event => setValue(event.target.value)} placeholder={isExpression ? "把四個數字各用一次" : "答案"}/>
+        {isExpression && <div className="expression-keys">{["+","−","×","÷","(",")"].map(operator =>
+          <button className="control" type="button" key={operator} onClick={() => append(operator)}>{operator}</button>)}</div>}
+        <div className="keypad">
+          {keys.map(key => <button type="button" className="control" key={key} onClick={() => append(key)}>{key}</button>)}
+          <button type="button" className="control" aria-label="刪除" onClick={() => setValue(value.slice(0, -1))}><Eraser size={20}/></button>
+          <button type="button" className="control" onClick={() => setValue("")}>清除</button>
+        </div>
+        <button type="submit" className="button primary full" disabled={!value.trim()}>確認答案</button>
+      </fieldset>
+    </form>}
+  </>;
 }
 
-export function GameControls({ remote, controls, gameId, send }: {
-  remote: RemoteControls; controls: Controls; gameId: string; send: (action: Action) => void
+export function GameControls({ remote, controls, gameId, offset, send }: {
+  remote: RemoteControls; controls: Controls; gameId: string; offset: number; send: (action: Action) => Promise<void>;
 }) {
   const sendRef = useRef(send);
   sendRef.current = send;
@@ -185,7 +215,8 @@ export function GameControls({ remote, controls, gameId, send }: {
   }, [controls]);
   if (remote.completion) return <p className="notice" role="status">{completionLabels[remote.completion]}，等候本場結果。</p>;
   if (controls === "answer" || controls === "expression") {
-    return <QuizControls key={remote.questionId ?? 0} remote={remote} isExpression={controls === "expression"} send={send}/>;
+    return <QuizControls key={`${remote.questionId}:${remote.answerAvailableAt}`} remote={remote}
+      isExpression={controls === "expression"} offset={offset} send={send}/>;
   }
   if (controls === "flight" || controls === "runner") return <div className="action-controls">
     {controls === "flight" ? <>

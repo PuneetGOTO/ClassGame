@@ -161,14 +161,15 @@ export function Controller({ connection }: { connection: CampusConnection }) {
       await enterScanned(created.state);
     });
   }
-  function send(action: Action) {
+  async function send(action: Action) {
     const room = roomRef.current;
     if (!room || room.status !== "running" || !socket.connected) return;
     const seq = ++sequence.current;
-    void request("game:input", { sessionId: room.id, seq, action }).catch(failure => {
-      if (failure instanceof RemoteError && ["rate", "not-running"].includes(failure.code)) return;
+    try { await request("game:input", { sessionId: room.id, seq, action }); }
+    catch (failure) {
+      if (failure instanceof RemoteError && ["rate", "not-running", "answer-cooldown"].includes(failure.code)) return;
       setError(message(failure));
-    });
+    }
   }
 
   const routeStation = campus?.stations.find(station => station.id === entryStation);
@@ -238,7 +239,7 @@ export function Controller({ connection }: { connection: CampusConnection }) {
       {room.status === "running" && <>
         {room.doubleChallenge && <DoubleBanner challenge={room.doubleChallenge} playerId={player.player.id} team={false}/>}
         {me?.participated && !me.forfeited && online &&
-          <GameControls key={room.id} remote={room.match?.remote ?? {}} controls={game.controls} gameId={game.id} send={send}/>}
+          <GameControls key={room.id} remote={room.match?.remote ?? {}} controls={game.controls} gameId={game.id} offset={offset} send={send}/>}
         <p className="muted small">每位玩家須操作，這場才會計入個人關卡。</p>
       </>}
       {room.status === "finished" && <p className="notice">正在同步本場成績</p>}

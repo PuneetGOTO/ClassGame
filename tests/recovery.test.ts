@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { ANSWER_COOLDOWN_MS } from "../packages/shared/rules";
 import { harness, ok, send } from "./socket-helper";
 
 test("restart preserves both boards, controller IDs, input sequences and timer", async () => {
@@ -33,11 +34,15 @@ test("restart preserves both boards, controller IDs, input sequences and timer",
     assert.equal(restored.room?.deadline, deadline);
     assert.equal(restored.room?.scene, null);
     assert.deepEqual(restored.room?.match?.remote, aBefore.match?.remote);
+    assert.equal(restored.room?.match?.remote?.answerAvailableAt, at + ANSWER_COOLDOWN_MS);
     assert.deepEqual(service.campus.hostView("HOST-10").room?.match?.panels, saved);
     const duplicate = await ok(first, "game:input", { sessionId: id, seq: aBefore.seq,
       action: { kind: "choice", questionId: aBefore.match!.remote!.questionId!, index: 0 }
     });
     assert.equal(duplicate.seq, aBefore.seq);
+    const early = await send(first, "game:input", { sessionId: id, seq: aBefore.seq + 1,
+      action: { kind: "choice", questionId: aBefore.match!.remote!.questionId!, index: 0 } });
+    assert.ok(!early.ok && early.code === "answer-cooldown");
     assert.deepEqual(service.campus.hostView("HOST-10").room?.match?.panels, saved);
     service.step(deadline! - service.time());
     assert.equal(service.store.resultsForSession(id).length, 2);
