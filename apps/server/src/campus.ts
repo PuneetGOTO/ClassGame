@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import type { Server, Socket } from "socket.io";
-import { AIR_HOCKEY_ID, COUNTDOWN_MS, DOJO_FIGHTER_ID, GAME_MS, GAMES, gameById, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
+import { AIR_HOCKEY_ID, BOMBERMAN_ID, COUNTDOWN_MS, DOJO_FIGHTER_ID, GAME_MS, GAMES, gameById, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
 import { floorLabel, type Floor } from "../../../packages/shared/floors";
 import {
   DOUBLE_END_MS, DOUBLE_START_MS, HOST_SCREEN_VERSION, MATCH_ARRIVAL_MS, MATCH_WAIT_MS, MIN_MATCH_PLAYERS,
@@ -27,7 +27,9 @@ interface Room { row: SessionRow; members: Map<string, MemberRow>; arena?: Arena
 const resultDisplayMs = 5000;
 const clockCheckpointMs = 1000;
 const hostRefreshMessage = "請重新整理大螢幕頁面，載入新版對戰畫面";
-const minimumScreenVersion = (gameId: string) => gameId === DOJO_FIGHTER_ID ? 5 : gameId === AIR_HOCKEY_ID ? 4 : gameId === VOLLEYBALL_ID ? 3 : 2;
+const screenVersions = new Map([[BOMBERMAN_ID, 5], [DOJO_FIGHTER_ID, 5], [AIR_HOCKEY_ID, 4], [VOLLEYBALL_ID, 3]]);
+const minimumScreenVersion = (gameId: string) => screenVersions.get(gameId) ?? 2;
+const isFourPlayerFreeForAll = (room: SessionRow) => room.game_id === BOMBERMAN_ID && (room.seed & 1) === 1;
 
 export class Campus {
   private readonly rooms = new Map<string, Room>();
@@ -128,7 +130,8 @@ export class Campus {
       }),
       scene: null, progress: playing && member?.side != null ? arena?.panel(member.side, false).progress ?? null : null,
       match: {
-        mode: matchMode(members.size), arrivalDeadline: row.created_at + MATCH_ARRIVAL_MS, winner: row.winner_side ?? null,
+        mode: matchMode(members.size, isFourPlayerFreeForAll(row) ? 4 : sides.length),
+        arrivalDeadline: row.created_at + MATCH_ARRIVAL_MS, winner: row.winner_side ?? null,
         ...(viewer
           ? { remote: playing && member?.side != null ? arena?.remote(member.side, viewer, clockOffset) ?? {} : {} }
           : { panels: playing ? sides.map(side => arena!.panel(side)) : [] })
@@ -504,11 +507,15 @@ export class Campus {
     if (!this.hosts.has(row.host_id)) return false;
     const ready = shuffled([...room.members.values()].filter(member =>
       member.checked_in && member.ready && this.players.has(member.player_id)), randomInt);
-    if (ready.length < MIN_MATCH_PLAYERS || (!force && ready.length < room.members.size)) return false;
-    if (gameById.get(row.game_id)?.sharedArena && ready.length === 3) ready.pop();
+    const info = gameById.get(row.game_id);
+    const minPlayers = info?.minPlayers ?? MIN_MATCH_PLAYERS;
+    if (ready.length < minPlayers || (!force && ready.length < room.members.size)) return false;
+    if (info?.sharedArena && ready.length === 3) ready.pop();
+    if (ready.length < minPlayers) return false;
     const absent = [...room.members.values()].filter(member => !ready.includes(member));
     const participants = ready.map(member => member.player_id);
-    const sides = ready.map((_, i) => ready.length === 4 ? i % 2 : i);
+    const isFfa4 = isFourPlayerFreeForAll(row);
+    const sides = ready.map((_, i) => ready.length === 4 ? (isFfa4 ? i : i % 2) : i);
     const assigned = new Map(participants.map((id, index) => [id, sides[index]]));
     const seats = [...room.members.keys()].flatMap(id => {
       const side = assigned.get(id);

@@ -183,6 +183,8 @@ input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: var(--blue
 [data-side="0"] { --side-ink: #81cfff; --side-line: #2c719c; }
 [data-side="1"] { --side-ink: #ffc183; --side-line: #9a6031; }
 [data-side="2"] { --side-ink: #89e9bc; --side-line: #39795f; }
+[data-side="3"] { --side-ink: #d8b4fe; --side-line: #8655b2; }
+[data-side="3"] { --side-ink: #d8b4fe; --side-line: #7e22ce; }
 .remote-panel { gap: 16px; }
 .remote-player { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
   padding: 10px 12px; background: #142232; border: 1px solid var(--side-line,var(--line)); border-radius: 8px; }
@@ -303,6 +305,53 @@ input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: var(--blue
   .airhockey-team,.airhockey-center,.airhockey-pips { gap: 5px; }
   .airhockey-pips i { width: 7px; }
 }
+.bomberman-stage { --bomberman-toolbar-height: 340px; display: grid; gap: 10px; width: 100%; justify-items: center; }
+.bomberman-hud { width: 100%; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 12px; background: rgba(9, 15, 36, 0.88); border: 1px solid rgba(56, 189, 248, 0.28); }
+.bomberman-mode-badge { display: grid; gap: 3px; }
+.bomberman-mode-badge strong { font-size: .95rem; color: #f8fafc; }
+.bomberman-shrink-alert { font-size: .8rem; font-weight: 700; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.bomberman-shrink-alert.active { color: #fb7185; text-shadow: 0 0 10px rgba(244, 63, 94, 0.65); }
+.bomberman-sides { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.bomberman-side-chip { display: grid; gap: 2px; padding: 5px 10px; border-radius: 8px; overflow-wrap: anywhere;
+  background: rgba(15, 23, 42, 0.82); border: 1px solid var(--side-line); text-align: center; }
+.bomberman-side-chip.eliminated { opacity: 0.45; }
+.bomberman-side-name { font-size: .82rem; font-weight: 800; color: var(--side-ink); }
+.bomberman-side-meta { font-size: .78rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+.bomberman-mute { display: inline-flex; justify-content: center; align-items: center; min-width: 44px; min-height: 44px; gap: 6px; padding: 7px 12px; border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(15, 23, 42, 0.9); color: var(--ink);
+  font-size: .82rem; font-weight: 600; cursor: pointer; }
+.bomberman-canvas { width: min(100%,max(184px,calc((100svh - var(--bomberman-toolbar-height) - var(--challenge-banner-space,0px)) * 13 / 11)));
+  aspect-ratio: 13 / 11; display: block; border-radius: 14px;
+  border: 1px solid rgba(56, 189, 248, 0.35); box-shadow: 0 18px 44px rgba(0, 0, 0, 0.52); background: #090f24; }
+.host-game:has(.double-banner) { --challenge-banner-space: 70px; }
+@media (max-width: 1150px) {
+  .bomberman-stage { --bomberman-toolbar-height: 395px; }
+}
+.bomberman-controls { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 8px 24px; }
+.bomberman-dpad,.bomberman-bomb-btn { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.bomberman-bomb-btn,.dojo-jump-btn,.dojo-attack-btn { -webkit-tap-highlight-color: transparent; }
+.bomberman-dpad { inline-size: clamp(160px, 44vw, 196px); aspect-ratio: 1; display: grid;
+  grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 6px; padding: 8px;
+  border-radius: 26px; background: radial-gradient(circle at center, #14223b, #0b1426);
+  border: 1px solid rgba(56, 189, 248, 0.38); box-shadow: inset 0 0 24px rgba(56, 189, 248, 0.12); }
+.bomberman-key { display: grid; place-items: center; border-radius: 14px; background: #162844;
+  border: 1px solid rgba(125, 211, 252, 0.28); color: #cbd5e1; transition: background .08s, transform .08s, box-shadow .08s; }
+.bomberman-key[data-active="true"] { background: #0284c7; color: #fff; border-color: #bae6fd;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.65); transform: scale(0.95); }
+.bomberman-key-up { grid-column: 2; grid-row: 1; }
+.bomberman-key-left { grid-column: 1; grid-row: 2; }
+.bomberman-key-center { grid-column: 2; grid-row: 2; border-radius: 50%; background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.3); margin: 10px; }
+.bomberman-key-right { grid-column: 3; grid-row: 2; }
+.bomberman-key-down { grid-column: 2; grid-row: 3; }
+.bomberman-bomb-btn { inline-size: clamp(106px, 31vw, 134px); aspect-ratio: 1; border-radius: 50%;
+  display: grid; place-content: center; justify-items: center; gap: 4px; padding: 0;
+  border: 2px solid #fda4af; color: #fff; font-weight: 800; font-size: 1rem;
+  background: radial-gradient(circle at 35% 30%, #fb7185, #e11d48 62%, #881337);
+  box-shadow: 0 0 26px rgba(244, 63, 94, 0.45); transition: transform .08s, box-shadow .08s; }
+.bomberman-bomb-btn:active,.bomberman-bomb-btn[data-active="true"] { transform: scale(0.93);
+  box-shadow: 0 0 36px rgba(251, 113, 133, 0.85); }
 .dojo-stage { display: grid; gap: 10px; width: 100%; }
 .dojo-hud { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 12px;
   padding: 10px 16px; border-radius: 14px; background: linear-gradient(180deg, #fff9ee, #f6e7cc);
@@ -325,7 +374,8 @@ input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: var(--blue
 .dojo-mute { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px;
   border: 2.5px solid #2b1e1a; background: #fffbeb; color: #2b1e1a; cursor: pointer; }
 .dojo-mute:hover { background: #fde68a; }
-.dojo-canvas { width: 100%; aspect-ratio: 2 / 1; display: block; border-radius: 14px; border: 3px solid #2b1e1a;
+.dojo-canvas { width: min(100%,max(240px,calc((100svh - 320px - var(--challenge-banner-space,0px)) * 2))); justify-self: center;
+  aspect-ratio: 2 / 1; display: block; border-radius: 14px; border: 3px solid #2b1e1a;
   box-shadow: 0 10px 28px rgba(43, 30, 26, 0.28); background: #ffe8c2; }
 .dojo-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 6px 20px; }
 .dojo-move-pad,.dojo-jump-btn,.dojo-attack-btn { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
@@ -636,6 +686,9 @@ button.tile:hover { box-shadow: inset 0 0 0 2px var(--blue); }
   .controller-match .volleyball-jump { inline-size: clamp(92px,30svh,120px); }
   .controller-match .airhockey-controls { gap: 6px; padding-block: 4px; }
   .controller-match .airhockey-stick { inline-size: clamp(112px,42svh,170px); }
+  .controller-match .bomberman-controls { padding: 4px 6px 10px; }
+  .controller-match .bomberman-dpad { inline-size: clamp(134px,46svh,180px); gap: 4px; padding: 5px; }
+  .controller-match .bomberman-bomb-btn { inline-size: clamp(90px,34svh,118px); }
   .controller-match .dojo-controls { padding: 4px 6px 10px; }
   .controller-match .dojo-move-pad { inline-size: clamp(160px,46svh,210px); }
   .controller-match .dojo-jump-btn { inline-size: clamp(72px,26svh,92px); }
@@ -662,13 +715,24 @@ button.tile:hover { box-shadow: inset 0 0 0 2px var(--blue); }
   .arena-board .quiz-prompt { min-height: 0; padding: 6px 2px; }
   .arena-options > div { padding: 4px; }
   .arena-board .glass { height: min(120px,32svh); }
-  .volleyball-stage,.airhockey-stage,.dojo-stage { gap: 6px; }
-  .volleyball-hud,.airhockey-hud,.dojo-hud { padding: 6px 8px; }
+  .volleyball-stage,.airhockey-stage,.dojo-stage,.bomberman-stage { gap: 6px; }
+  .volleyball-hud,.airhockey-hud,.dojo-hud,.bomberman-hud { padding: 6px 8px; }
   .volleyball-canvas,.airhockey-canvas,.dojo-canvas { width: min(100%,max(240px,calc(200svh - 340px))); justify-self: center; }
+  .bomberman-canvas { width: min(100%,max(184px,calc(118svh - 214px))); }
+  .bomberman-sides { gap: 4px; }
+  .bomberman-side-chip { padding: 3px 6px; }
 }
 @media (orientation: landscape) and (min-width: 720px) and (max-width: 800px) {
   .host-layout { grid-template-columns: minmax(0,1fr) minmax(175px,.38fr); }
   .host-aside { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 520px) {
+  .bomberman-hud { grid-template-columns: 1fr auto; }
+  .bomberman-sides { grid-column: 1 / -1; grid-row: 2; }
+  .bomberman-mute span { display: none; }
+  .dojo-hud { gap: 6px; padding: 6px; }
+  .dojo-center { gap: 4px; }
+  .dojo-phase-badge { padding-inline: 5px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }

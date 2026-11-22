@@ -21,12 +21,18 @@ export function selectMatch(waiting: Candidate[], rooms: RoomChoice[], now: numb
       const sameTier = compatible.filter(player => routeTier(player.step) === routeTier(first.step));
       const others = wait >= MATCH_WAIT_MS ? compatible : sameTier;
       // Leave at least two players together when four seats would leave one alone.
-      const size = waiting.length % MAX_MATCH_PLAYERS === 1 && waiting.length >= 5 ? 3 : MAX_MATCH_PLAYERS;
-      const isShared = gameById.get(room.gameId)?.sharedArena;
+      const info = gameById.get(room.gameId);
+      const minPlayers = info?.minPlayers ?? MIN_MATCH_PLAYERS;
+      const isShared = Boolean(info?.sharedArena);
+      const size = minPlayers === MAX_MATCH_PLAYERS
+        ? MAX_MATCH_PLAYERS
+        : waiting.length % MAX_MATCH_PLAYERS === 1 && waiting.length >= 5 ? 3 : MAX_MATCH_PLAYERS;
       const target = isShared && size === 3 ? 2 : size;
       const players = [first, ...others.slice(0, target - 1)];
-      if (players.length < (wait >= MATCH_WAIT_MS ? MIN_MATCH_PLAYERS : target)) return [];
+      const required = wait >= MATCH_WAIT_MS ? minPlayers : target;
+      if (players.length < required) return [];
       if (isShared && players.length === 3) players.pop();
+      if (players.length < minPlayers) return [];
       const spread = Math.max(...players.map(player => player.step)) - Math.min(...players.map(player => player.step));
       const floorChanges = players.filter(player => player.lastFloor && player.lastFloor !== room.floor).length;
       return [{ stationId: room.id, players, spread, floorChanges }];

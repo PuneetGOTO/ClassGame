@@ -27,7 +27,9 @@ export function completedRouteSteps(steps: readonly (number | null)[]) {
   return completed;
 }
 
-export type MatchMode = "duel" | "free-for-all" | "doubles";
-export const modeTitle: Record<MatchMode, string> = { duel: "1 對 1", "free-for-all": "三人對戰", doubles: "2 對 2" };
-export const sideLabels = ["藍方", "橙方", "綠方"] as const;
+export type MatchMode = "duel" | "free-for-all" | "doubles" | "ffa4";
+export const modeTitle: Record<MatchMode, string> = {
+  duel: "1 對 1", "free-for-all": "三人對戰", doubles: "2 對 2", ffa4: "四人混戰"
+};
+export const sideLabels = ["藍方", "橙方", "綠方", "紫方"] as const;
 

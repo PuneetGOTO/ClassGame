@@ -262,7 +262,7 @@ export function Controller({ connection }: { connection: CampusConnection }) {
         <button className={"button full " + (me?.ready ? "secondary" : "primary")} disabled={!online || busy || (portrait && !me?.ready)} onClick={() => void run(async () => {
           update(await request("game:ready", { sessionId: room.id, ready: !me?.ready }));
         })}>{me?.ready ? "取消就緒" : "我已準備好"} <Check size={19}/></button>
-        <p className="muted small">至少兩位玩家到場並就緒才可開局。</p>
+        <p className="muted small">{game.minPlayers === 4 ? "四位玩家都到場並就緒才可開局。" : "至少兩位玩家到場並就緒才可開局。"}</p>
       </>}
       {room.status === "countdown" && <div className="countdown-center"><p>即將開始</p><RoomClock room={room} offset={offset}/></div>}
       {room.status === "running" && <>

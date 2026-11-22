@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowsOut, GameController, Monitor, QrCode } from "@phosphor-icons/react";
-import { GAMES, categoryLabel, gameById, type Category } from "../../../packages/shared/catalog";
+import { BOMBERMAN_ID, GAMES, categoryLabel, gameById, type Category } from "../../../packages/shared/catalog";
 import { practiceNames, practiceSeats, type PracticeRole, type PracticeView } from "../../../packages/shared/practice";
-import type { Action } from "../../../packages/shared/protocol";
+import type { Action, BombermanMode } from "../../../packages/shared/protocol";
 import { sideLabels } from "../../../packages/shared/route";
 import { Brand, ErrorText, RotatingQr, RoomClock, ScreenPauseNotice, Status } from "../../../packages/ui/components";
 import { RotateGameNotice, useGameOrientation } from "../../../packages/ui/game-orientation";
@@ -138,6 +138,15 @@ export function Practice({ connection }: { connection: CampusConnection }) {
         {GAMES.filter(item => item.category === category as Category).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
       </optgroup>)}</select>
     </label>}
+    {!playing && game.id === BOMBERMAN_ID && <label className="field">對戰模式（兩名 AI 補位）
+      <select value={view.bombermanMode ?? "2v2"} disabled={!online || busy} onChange={event => {
+        const bombermanMode = event.target.value as BombermanMode;
+        void run(() => request("practice:select", { gameId: BOMBERMAN_ID, bombermanMode }));
+      }}>
+        <option value="2v2">2 對 2（隊友免傷）</option>
+        <option value="1v1v1v1">四人混戰</option>
+      </select>
+    </label>}
     {!playing ? <button type="button" className="button primary" disabled={!ready || !online || busy || (isController && portrait)}
       onClick={() => void run(() => request("practice:start", null))}>{round ? "再玩一局" : "開始測試"}</button>
       : <button type="button" className="button secondary" disabled={!online || busy}
@@ -183,7 +192,9 @@ export function Practice({ connection }: { connection: CampusConnection }) {
     <ErrorText text={error}/>
     <div className="host-layout">
       <section className="panel host-game" data-enter>
-        <div className="host-title"><div><p className="eyebrow">1 對 1</p><h1>{game.name}</h1></div>
+        <div className="host-title"><div><p className="eyebrow">
+          {game.id === BOMBERMAN_ID ? (view.bombermanMode === "1v1v1v1" ? "四人混戰" : "2 對 2") + " · 兩名 AI" : "1 對 1"}
+        </p><h1>{game.name}</h1></div>
           <div className="host-clock"><RoomClock room={online ? round : null} offset={offset}/><span>{round?.status === "countdown" ? "開始倒數" : "剩餘時間"}</span></div>
         </div>
         {!online && playing && <p className="notice" role="status">大螢幕連線中斷，正在重連。</p>}

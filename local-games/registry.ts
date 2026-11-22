@@ -4,7 +4,6 @@ import lights from "./game-02";
 import pipes from "./game-03";
 import traffic from "./game-04";
 import tubes from "./game-05";
-import munch from "./game-06";
 import star from "./game-08";
 import dino from "./game-09";
 import mentalMath from "./game-10";
@@ -18,6 +17,7 @@ import mathDuel from "./game-18";
 import mathBreakout from "./game-20";
 import slimeVolleyball from "./game-21";
 import airHockey from "./game-22";
+import neonBomberman from "./game-23";
 import dojoFighter from "./game-24";
 
 export const plugins: ReadonlyMap<string, PluginFactory> = new Map([
@@ -26,7 +26,6 @@ export const plugins: ReadonlyMap<string, PluginFactory> = new Map([
   ["game-03", pipes],
   ["game-04", traffic],
   ["game-05", tubes],
-  ["game-06", munch],
   ["game-08", star],
   ["game-09", dino],
   ["game-10", mentalMath],
@@ -40,5 +39,6 @@ export const plugins: ReadonlyMap<string, PluginFactory> = new Map([
   ["game-20", mathBreakout],
   ["game-21", slimeVolleyball],
   ["game-22", airHockey],
+  ["game-23", neonBomberman],
   ["game-24", dojoFighter]
 ]);

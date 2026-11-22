@@ -390,5 +390,33 @@ UPDATE game_sessions SET status='cancelled',reason='reset',
   ended_at=COALESCE(ended_at,CAST(unixepoch('subsec') * 1000 AS INTEGER))
   WHERE game_id='game-17' AND status IN ('lobby','countdown','running');
 `
+}, {
+  version: 12,
+  sql: `
+ALTER TABLE game_sessions RENAME COLUMN winner_side TO previous_winner_side;
+ALTER TABLE game_sessions ADD COLUMN winner_side INTEGER CHECK (winner_side BETWEEN 0 AND 3);
+UPDATE game_sessions SET winner_side=previous_winner_side WHERE previous_winner_side IS NOT NULL;
+ALTER TABLE game_sessions DROP COLUMN previous_winner_side;
+ALTER TABLE session_members RENAME COLUMN side TO previous_side;
+ALTER TABLE session_members ADD COLUMN side INTEGER CHECK (side BETWEEN 0 AND 3);
+UPDATE session_members SET side=previous_side WHERE previous_side IS NOT NULL;
+ALTER TABLE session_members DROP COLUMN previous_side;
+
+INSERT INTO games(game_id,game_name,category,mode,time_limit,plugin_path,win_condition)
+  VALUES ('game-23','霓虹炸彈人','adventure','solo',60,'local-games/game-23','最後存活的一方獲勝')
+  ON CONFLICT(game_id) DO NOTHING;
+UPDATE hosts SET assigned_game_id='game-23' WHERE assigned_game_id='game-06';
+UPDATE games SET enabled=0 WHERE game_id='game-06';
+
+INSERT OR IGNORE INTO match_search(player_id,queued_at,assisting)
+  SELECT m.player_id, s.created_at, m.route_step=0
+  FROM game_sessions s JOIN session_members m USING(session_id) JOIN players p USING(player_id)
+  JOIN competitions c ON c.id=s.competition_id
+  WHERE s.game_id='game-06' AND s.status IN ('lobby','countdown','running') AND c.closed_at IS NULL
+    AND m.checked_in=1 AND m.forfeited=0 AND p.suspended=0;
+UPDATE game_sessions SET status='cancelled',reason='reset',
+  ended_at=COALESCE(ended_at,CAST(unixepoch('subsec') * 1000 AS INTEGER))
+  WHERE game_id='game-06' AND status IN ('lobby','countdown','running');
+`
 }];
 

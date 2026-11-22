@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, randomInt, randomUUID } from "node:crypto";
-import { COUNTDOWN_MS, GAME_MS, gameById, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
+import { BOMBERMAN_ID, COUNTDOWN_MS, GAME_MS, gameById, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
 import { practiceSeats, type PracticeRole, type PracticeSeat, type PracticeView } from "../../../packages/shared/practice";
-import { stationQrSchema, type ClientEvents } from "../../../packages/shared/protocol";
+import { stationQrSchema, type BombermanMode, type ClientEvents } from "../../../packages/shared/protocol";
 import type { PluginFactory } from "../../../packages/game-sdk";
 import { SCREEN_RECONNECT_MS } from "../../../packages/shared/rules";
 import { Arena, type ArenaResult } from "./arena";
@@ -15,12 +15,14 @@ type Round = NonNullable<PracticeView["round"]> & { arena: Arena; pausedMs: numb
 type Pairing = { id: string; token: string | null };
 const sideOf: Record<PracticeSeat, number> = { P1: 0, P2: 1 };
 const bothSides = new Set([0, 1]);
+const fourSides = new Set([0, 1, 2, 3]);
 const newPairing = (): Pairing => ({ id: randomUUID(), token: null });
 
 export class Practice {
   private readonly peers = new Map<PracticeRole, CampusSocket>();
   private readonly pairings: Record<PracticeSeat, Pairing> = { P1: newPairing(), P2: newPairing() };
   private gameId = VOLLEYBALL_ID;
+  private bombermanMode: BombermanMode = "2v2";
   private round?: Round;
   private codeDeadline = 0;
 
@@ -124,7 +126,9 @@ export class Practice {
   private view(role: PracticeRole): PracticeView {
     const state = this.round;
     return {
-      role, gameId: this.gameId, screenOnline: this.peers.has("screen"),
+      role, gameId: this.gameId,
+      ...(this.gameId === BOMBERMAN_ID ? { bombermanMode: this.bombermanMode } : {}),
+      screenOnline: this.peers.has("screen"),
       seats: { P1: this.peers.has("P1"), P2: this.peers.has("P2") },
       round: state ? {
         id: state.id, status: state.status, startedAt: state.startedAt + state.pausedMs, deadline: state.deadline,
@@ -160,15 +164,17 @@ export class Practice {
     }
   }
 
-  select(socket: CampusSocket, gameId: string) {
+  select(socket: CampusSocket, gameId: string, bombermanMode?: BombermanMode) {
     const role = this.role(socket);
     if (!this.plugins.has(gameId)) throw new RequestError("找不到這款遊戲", "not-found", 404);
-    if (gameId === this.gameId) return this.view(role);
+    const nextMode = gameId === BOMBERMAN_ID && bombermanMode ? bombermanMode : this.bombermanMode;
+    if (gameId === this.gameId && nextMode === this.bombermanMode) return this.view(role);
     if (this.round && this.round.status !== "finished") {
       throw new RequestError("請先結束這一局再換遊戲", "in-progress", 409);
     }
     this.clearRound();
     this.gameId = gameId;
+    this.bombermanMode = nextMode;
     this.publish(socket);
     return this.view(role);
   }
@@ -180,7 +186,12 @@ export class Practice {
       throw new RequestError("開啟測試大螢幕並連上兩支手掣後即可開始", "not-ready", 409);
     }
     const seats = practiceSeats.map(id => ({ id, side: sideOf[id] }));
-    const arena = new Arena(this.plugins.get(this.gameId)!, this.gameId, randomInt(0x1_0000_0000), 1, seats);
+    let seed = randomInt(0x1_0000_0000);
+    if (this.gameId === BOMBERMAN_ID) {
+      // 偶數種子代表 2v2 團隊戰，奇數種子代表 1v1v1v1 四人混戰
+      seed = this.bombermanMode === "1v1v1v1" ? ((seed | 1) >>> 0) : ((seed & ~1) >>> 0);
+    }
+    const arena = new Arena(this.plugins.get(this.gameId)!, this.gameId, seed, 1, seats);
     const startedAt = this.now() + COUNTDOWN_MS;
     this.clearRound();
     this.round = {
@@ -217,7 +228,7 @@ export class Practice {
     const gameNow = now - round.pausedMs;
     const change = round.arena.input(sideOf[role], role, action, gameNow - round.startedAt, gameNow);
     round.sequence[role] = seq;
-    const result = round.arena.result(bothSides);
+    const result = round.arena.result(this.resultSides());
     if (result) this.finish(round, result.winner, result.reason);
     if (change.changed || result) this.publish();
     return { seq };
@@ -229,6 +240,10 @@ export class Practice {
     round.winner = winner;
     round.reason = reason;
     round.pausedAt = undefined;
+  }
+
+  private resultSides() {
+    return this.gameId === BOMBERMAN_ID && this.bombermanMode === "1v1v1v1" ? fourSides : bothSides;
   }
 
   private advance(now: number) {
@@ -257,7 +272,7 @@ export class Practice {
     const time = Math.min(now, round.deadline) - round.pausedMs;
     const online = new Set(practiceSeats.filter(seat => this.peers.has(seat)).map(seat => sideOf[seat]));
     if (round.arena.tick(time - round.startedAt, time, online)) changed = true;
-    const result = round.arena.result(bothSides, now >= round.deadline);
+    const result = round.arena.result(this.resultSides(), now >= round.deadline);
     if (!result) return changed;
     this.finish(round, result.winner, result.reason);
     return true;

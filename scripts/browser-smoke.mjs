@@ -358,9 +358,13 @@ try {
     await dashboard.getByRole("button", { name: "測試遊戲" }).click();
     let practiceCourt;
     let practiceHockey;
+    let practiceBombs;
+    let practiceDojo;
     dashboard.context().once("page", page => {
       practiceCourt = watchVolleyballCourt(page, "practice:state");
       practiceHockey = watchCourt(page, "practice:state", "air-hockey");
+      practiceBombs = watchCourt(page, "practice:state", "bomberman");
+      practiceDojo = watchCourt(page, "practice:state", "dojo-fighter");
     });
     const [practiceScreen] = await Promise.all([
       dashboard.waitForEvent("popup"),
@@ -413,8 +417,9 @@ try {
     await practiceScreen.getByText("兩支手掣已連線").waitFor();
     assert.equal(await practicePhones[1].getByRole("alert").count(), 0);
     assert.equal(await practicePhones[0].locator("select option").count(), 20);
-    assert.equal(await practicePhones[0].locator("option[value='game-19']").count(), 0);
-    assert.equal(await practicePhones[0].locator("option[value='game-07']").count(), 0);
+    for (const retired of ["game-06", "game-07", "game-17", "game-19"]) {
+      assert.equal(await practicePhones[0].locator(`option[value='${retired}']`).count(), 0);
+    }
     await practicePhones[0].getByText("請將手機轉成橫向").waitFor();
     assert.equal(await practicePhones[0].getByRole("button", { name: "開始測試" }).isDisabled(), true);
     await Promise.all(practicePhones.map(page => page.setViewportSize(phoneLandscape)));
@@ -443,6 +448,57 @@ try {
       await practicePhones[0].screenshot({ path: "test-results/air-hockey-controller.png", animations: "disabled" });
     }
     await practiceScreen.getByRole("button", { name: "結束這局" }).click();
+    await practicePhones[0].getByLabel("選擇遊戲").selectOption("game-23");
+    await practiceScreen.getByRole("heading", { name: "霓虹炸彈人", exact: true }).waitFor();
+    for (const mode of ["2v2", "1v1v1v1"]) {
+      await practiceScreen.getByLabel(/對戰模式/).selectOption(mode);
+      await practiceScreen.getByRole("button", { name: "開始測試" }).click();
+      await practiceScreen.getByLabel("霓虹炸彈人即時戰場").waitFor();
+      if (mode === "1v1v1v1") await expectArenaFits(practiceScreen, ".bomberman-canvas");
+      await eventually(() => {
+        const scene = practiceBombs();
+        assert.equal(scene?.mode, mode);
+        assert.equal(scene.players.length, 4);
+        assert.equal(scene.players.filter(player => player.isBot).length, 2);
+      });
+      const handset = practicePhones[0];
+      await handset.setViewportSize({ width: 568, height: 320 });
+      const placeBomb = handset.getByRole("button", { name: "放炸彈" });
+      await placeBomb.waitFor();
+      await expectInViewport(handset.locator(".play-clock, .bomberman-dpad, .bomberman-bomb-btn"));
+      await expectSideBySide(handset.locator(".bomberman-controls > *"));
+      assert.equal(await handset.locator("canvas").count(), 0);
+      await placeBomb.tap();
+      await eventually(() => assert.ok(practiceBombs().bombs.some(bomb => bomb.ownerSide === 0)));
+      if (process.env.CAMPUS_SCREENSHOTS && mode === "1v1v1v1") {
+        await practiceScreen.screenshot({ path: "test-results/bomberman-screen.png", animations: "disabled" });
+        await handset.screenshot({ path: "test-results/bomberman-controller.png", animations: "disabled" });
+      }
+      await practiceScreen.getByRole("button", { name: "結束這局" }).click();
+      await placeBomb.waitFor({ state: "hidden" });
+      await handset.setViewportSize(phoneLandscape);
+    }
+    await practicePhones[0].getByLabel("選擇遊戲").selectOption("game-24");
+    await practiceScreen.getByRole("heading", { name: "和風劍道對決", exact: true }).waitFor();
+    await practiceScreen.getByRole("button", { name: "開始測試" }).click();
+    await practiceScreen.getByLabel("和風劍道對決即時演武場").waitFor();
+    await expectArenaFits(practiceScreen, ".dojo-canvas");
+    assert.deepEqual(await practiceScreen.locator(".dojo-hp-num").allTextContents(), ["100", "100"]);
+    await practicePhones[0].setViewportSize({ width: 568, height: 320 });
+    const jump = practicePhones[0].getByRole("button", { name: "跳躍", exact: true });
+    await jump.waitFor();
+    await expectInViewport(practicePhones[0].locator(".play-clock, .dojo-move-pad, .dojo-jump-btn, .dojo-attack-btn"));
+    await expectSideBySide(practicePhones[0].locator(".dojo-controls > *"));
+    await jump.tap();
+    await eventually(() => assert.ok(practiceDojo()?.fighters.some(fighter => fighter.side === 0 && fighter.y < practiceDojo().groundY)));
+    await practicePhones[1].getByRole("button", { name: "斬擊" }).tap();
+    await eventually(() => assert.ok(practiceDojo()?.fighters.some(fighter => fighter.side === 1 && fighter.anim === "attack")));
+    if (process.env.CAMPUS_SCREENSHOTS) {
+      await practiceScreen.screenshot({ path: "test-results/dojo-screen.png", animations: "disabled" });
+      await practicePhones[0].screenshot({ path: "test-results/dojo-controller.png", animations: "disabled" });
+    }
+    await practiceScreen.getByRole("button", { name: "結束這局" }).click();
+    await practicePhones[0].setViewportSize(phoneLandscape);
     await practicePhones[0].getByLabel("選擇遊戲").selectOption("game-10");
     await practiceScreen.getByRole("heading", { name: "心算挑戰", exact: true }).waitFor();
     await practicePhones[1].getByRole("heading", { name: "心算挑戰", exact: true }).waitFor();
@@ -563,7 +619,7 @@ try {
   }
   assert.deepEqual(consoleErrors, []);
   console.log("Browser smoke passed: both floors, QR rotation, wrong-room rejection, 2 vs 2 with four mobile remotes, split-screen questions, reconnect, weighted result and rankings."
-    + (!process.env.SKIP_BROWSER_ADMIN ? " Admin, CSV, practice QR pairing, volleyball and air hockey controls checked." : ""));
+    + (!process.env.SKIP_BROWSER_ADMIN ? " Admin, CSV, practice QR pairing and both new landscape arcade games checked." : ""));
 } catch (error) {
   console.error(output);
   throw error;
@@ -637,6 +693,16 @@ async function expectInViewport(elements) {
 async function expectSideBySide(elements) {
   const [left, right] = await Promise.all([elements.nth(0).boundingBox(), elements.nth(1).boundingBox()]);
   assert.ok(left && right && left.x + left.width <= right.x, "panels must be side by side in landscape");
+}
+
+async function expectArenaFits(screen, canvas) {
+  const original = screen.viewportSize();
+  for (const [width, height] of [[1440,900], [1366,768], [1280,720], [1024,768]]) {
+    await screen.setViewportSize({ width, height });
+    await screen.evaluate(() => scrollTo(0, 0));
+    await expectInViewport(screen.locator(`.host-clock, ${canvas}`));
+  }
+  await screen.setViewportSize(original);
 }
 
 async function checkVolleyballRemote(page, actions, court) {

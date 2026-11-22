@@ -9,6 +9,8 @@ import { sideLabels } from "../shared/route";
 import { fmtScore, ProgressBar, Status } from "./components";
 import { AirHockeyControls } from "./air-hockey-controls";
 import { AirHockeyCanvas } from "./air-hockey-view";
+import { BombermanControls } from "./bomberman-controls";
+import { BombermanCanvas } from "./bomberman-view";
 import { DojoControls } from "./dojo-controls";
 import { DojoFighterCanvas } from "./dojo-fighter-view";
 import { VolleyballControls } from "./volleyball-controls";
@@ -46,6 +48,9 @@ export function RoundOutcome({ winner, reason, side, panels }: {
       <p className="monotext">藍方 {scene.scores[0]} 比 {scene.scores[1]} 橙方</p>}
     {scene?.kind === "dojo-fighter" &&
       <p className="monotext">剩餘血量 · 藍方 {scene.teamHp[0]} 比 {scene.teamHp[1]} 橙方</p>}
+    {scene?.kind === "bomberman" && <p className="monotext">
+      {scene.mode === "2v2" ? "2 對 2" : "四人混戰"} · 存活 {scene.players.filter(p => p.alive).length} 人
+    </p>}
     {reason && <p>{endLabels[reason]}</p>}
   </div>;
 }
@@ -77,6 +82,11 @@ export function ArenaPanels({ panels, members }: { panels: MatchPanel[]; members
       <DojoFighterCanvas scene={firstScene} members={members}/>
     </div>;
   }
+  if (firstScene?.kind === "bomberman") {
+    return <div className="arena-shared" aria-label="即時對戰">
+      <BombermanCanvas scene={firstScene} members={members}/>
+    </div>;
+  }
   return <div className="arena-panels" data-sides={panels.length} aria-label="即時對戰">
     {panels.map(panel => <section className="arena-panel" key={panel.side} data-side={panel.side}>
       <header><h2>{sideLabels[panel.side]}</h2><SideNames members={members} side={panel.side}/></header>
@@ -90,6 +100,7 @@ export function SceneView({ scene, cursor, completion }: { scene: Scene; cursor?
   if (scene.kind === "volleyball") return <VolleyballCanvas scene={scene} members={[]}/>;
   if (scene.kind === "air-hockey") return <AirHockeyCanvas scene={scene} members={[]}/>;
   if (scene.kind === "dojo-fighter") return <DojoFighterCanvas scene={scene} members={[]}/>;
+  if (scene.kind === "bomberman") return <BombermanCanvas scene={scene} members={[]}/>;
   if (scene.kind === "grid") return <div className="board" style={{ "--cols": scene.width, "--rows": scene.height } as CSSProperties} aria-label="遊戲棋盤">
     {scene.tiles.map((tile, index) => {
       const contents = <>
@@ -234,7 +245,7 @@ export function GameControls({ remote, controls, gameId, offset, send }: {
   const sendRef = useRef(send);
   sendRef.current = send;
   useEffect(() => {
-    if (controls === "volleyball" || controls === "air-hockey" || controls === "dojo-fighter") return;
+    if (["volleyball", "air-hockey", "dojo-fighter", "bomberman"].includes(controls)) return;
     const handler = (event: KeyboardEvent) => {
       if (["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes((event.target as HTMLElement).tagName)) return;
       const direction = directions.find(([name]) => event.key.toLowerCase() === "arrow" + name)?.[0];
@@ -249,10 +260,12 @@ export function GameControls({ remote, controls, gameId, offset, send }: {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [controls]);
+  if (remote.eliminated) return <p className="notice" role="status">你已出局，請看大螢幕等候本場結果。</p>;
   if (remote.completion) return <p className="notice" role="status">{completionLabels[remote.completion]}，等候本場結果。</p>;
   if (controls === "volleyball") return <VolleyballControls send={send}/>;
   if (controls === "air-hockey") return <AirHockeyControls send={send}/>;
   if (controls === "dojo-fighter") return <DojoControls send={send}/>;
+  if (controls === "bomberman") return <BombermanControls send={send}/>;
   if (controls === "answer" || controls === "expression") {
     return <QuizControls key={`${remote.questionId}:${remote.answerAvailableAt}`} remote={remote}
       isExpression={controls === "expression"} offset={offset} send={send}/>;

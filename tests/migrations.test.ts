@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { migrations } from "../apps/server/src/migrations";
 import { Store } from "../apps/server/src/store";
-import { AIR_HOCKEY_ID, CROSS_ROAD_ID, DOJO_FIGHTER_ID, NUMBER_HUNT_ID, VOLLEYBALL_ID, WEBCRAFT_ID } from "../packages/shared/catalog";
+import { AIR_HOCKEY_ID, BOMBERMAN_ID, CROSS_ROAD_ID, DOJO_FIGHTER_ID, MAZE_MUNCHER_ID, NUMBER_HUNT_ID, VOLLEYBALL_ID, WEBCRAFT_ID } from "../packages/shared/catalog";
 import { planPosition } from "../packages/shared/floors";
 
 test("upgrading a version-one database preserves its identity and initializes result metrics", async () => {
@@ -42,7 +42,7 @@ test("upgrading a version-one database preserves its identity and initializes re
       assert.equal(archived.baseAwarded,2);
       assert.deepEqual(archived.metrics,{});
       assert.deepEqual(store.playedGames("player"),[]);
-      assert.equal(store.get<{ user_version: number }>("PRAGMA user_version")!.user_version,11);
+      assert.equal(store.get<{ user_version: number }>("PRAGMA user_version")!.user_version,12);
       assert.equal(store.player("player")?.student_no,null);
       assert.equal(store.selfRegistration(),true);
       const stations = store.stationRows();
@@ -60,7 +60,8 @@ test("upgrading a version-one database preserves its identity and initializes re
 for (const { priorVersion, retired, replacement, host, station, name } of [
   { priorVersion: 8, retired: NUMBER_HUNT_ID, replacement: VOLLEYBALL_ID, host: "HOST-19", station: "STATION-19", name: "數字推理" },
   { priorVersion: 9, retired: CROSS_ROAD_ID, replacement: AIR_HOCKEY_ID, host: "HOST-07", station: "STATION-07", name: "穿越馬路" },
-  { priorVersion: 10, retired: WEBCRAFT_ID, replacement: DOJO_FIGHTER_ID, host: "HOST-17", station: "STATION-17", name: "龍之遠征" }
+  { priorVersion: 10, retired: WEBCRAFT_ID, replacement: DOJO_FIGHTER_ID, host: "HOST-17", station: "STATION-17", name: "龍之遠征" },
+  { priorVersion: 11, retired: MAZE_MUNCHER_ID, replacement: BOMBERMAN_ID, host: "HOST-06", station: "STATION-06", name: "迷宮吃豆" }
 ]) test("station migration preserves official points for " + name, async () => {
   const directory = await mkdtemp(join(tmpdir(), "campus-retire-game-"));
   const path = join(directory, "game.sqlite");
@@ -81,6 +82,8 @@ for (const { priorVersion, retired, replacement, host, station, name } of [
         VALUES (1,'retired-result',?,?,?,'TEAM-01',1,1,'win',2,10,90,100,1,1)`, edition, player, retired);
       old.run("INSERT INTO official_results VALUES (?,?,?,1)", edition, player, retired);
       old.run("INSERT INTO session_members(session_id,player_id,team_id,checked_in,route_step) VALUES ('retired-wait',?,'TEAM-01',1,2)", player);
+      old.run("UPDATE game_sessions SET winner_side=2 WHERE session_id='retired-result'");
+      old.run("INSERT INTO session_members(session_id,player_id,team_id,side) VALUES ('retired-result',?,'TEAM-01',2)", player);
       old.refreshPlayerScore(player, edition);
       old.db.exec("PRAGMA user_version=" + priorVersion);
     } finally { old.close(); }
@@ -94,6 +97,8 @@ for (const { priorVersion, retired, replacement, host, station, name } of [
       assert.equal(upgraded.get<{ status: string }>("SELECT status FROM game_sessions WHERE session_id='retired-wait'")?.status, "cancelled");
       assert.equal(upgraded.get<{ player_id: string }>("SELECT player_id FROM match_search")?.player_id, player);
       assert.equal(upgraded.officialFor(player)[0]?.gameId, retired);
+      assert.equal(upgraded.get<{ winner_side: number }>("SELECT winner_side FROM game_sessions WHERE session_id='retired-result'")?.winner_side, 2);
+      assert.equal(upgraded.get<{ side: number }>("SELECT side FROM session_members WHERE session_id='retired-result'")?.side, 2);
       assert.equal(upgraded.leaderboard().players[0]?.totalScore, 2);
       assert.equal(upgraded.get("PRAGMA foreign_key_check"), undefined);
     } finally { upgraded.close(); }

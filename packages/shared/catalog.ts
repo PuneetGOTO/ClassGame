@@ -6,16 +6,19 @@ export const GAME_MS = 60_000;
 export const COUNTDOWN_MS = 3_000;
 export const LOBBY_MS = 90_000;
 export const SCORE_SCALE = TEAM_SIZE;
+export const MAZE_MUNCHER_ID = "game-06";
 export const CROSS_ROAD_ID = "game-07";
 export const WEBCRAFT_ID = "game-17";
 export const NUMBER_HUNT_ID = "game-19";
 export const VOLLEYBALL_ID = "game-21";
 export const AIR_HOCKEY_ID = "game-22";
+export const BOMBERMAN_ID = "game-23";
 export const DOJO_FIGHTER_ID = "game-24";
 
 export type Category = "puzzle" | "adventure" | "math";
 export type Mode = "solo" | "co-op" | "team-quiz";
-export type Controls = "directions" | "cell" | "traffic" | "flight" | "runner" | "quest" | "answer" | "expression" | "volleyball" | "air-hockey" | "dojo-fighter";
+export type Controls = "directions" | "cell" | "traffic" | "flight" | "runner" | "quest" | "answer" | "expression"
+  | "volleyball" | "air-hockey" | "bomberman" | "dojo-fighter";
 
 export interface GameInfo {
   id: string;
@@ -26,6 +29,7 @@ export interface GameInfo {
   controls: Controls;
   objective: string;
   sharedArena?: boolean;
+  minPlayers?: number;
 }
 
 const entries = [
@@ -67,10 +71,23 @@ const dojoFighter: GameInfo = {
   objective: "操控和風武士移動、跳躍並揮刀斬擊對手，支援 1v1 與 2v2（隊友免傷），第 40 秒開啟雙倍傷害決勝時刻，團滅對手或 60 秒總血量較高一方獲勝。",
   sharedArena: true
 };
-catalog.push(dojoFighter);
+const bomberman: GameInfo = {
+  id: BOMBERMAN_ID,
+  name: "霓虹炸彈人",
+  english: "Neon Bomb Arena",
+  category: "adventure",
+  mode: "solo",
+  controls: "bomberman",
+  objective: "放炸彈清磚和搶道具，第 35 秒起場地縮小。四人隨機進行 2 對 2 或混戰，撐到最後一方獲勝。",
+  sharedArena: true,
+  minPlayers: 4
+};
+catalog.push(bomberman, dojoFighter);
 // Retired titles remain available for result history and CSV exports.
 export const gameById = new Map(catalog.map(game => [game.id, game]));
-const replacements = new Map([[CROSS_ROAD_ID, AIR_HOCKEY_ID], [WEBCRAFT_ID, DOJO_FIGHTER_ID], [NUMBER_HUNT_ID, VOLLEYBALL_ID]]);
+const replacements = new Map([
+  [MAZE_MUNCHER_ID, BOMBERMAN_ID], [CROSS_ROAD_ID, AIR_HOCKEY_ID], [WEBCRAFT_ID, DOJO_FIGHTER_ID], [NUMBER_HUNT_ID, VOLLEYBALL_ID]
+]);
 export const GAMES = catalog.slice(0, STATION_COUNT).map(game => gameById.get(replacements.get(game.id) ?? game.id)!);
 export const categoryLabel: Record<Category, string> = { puzzle: "解謎", adventure: "冒險", math: "數學" };
 export const modeLabel: Record<Mode, string> = { solo: "單人", "co-op": "隊伍合作", "team-quiz": "隊伍答題" };

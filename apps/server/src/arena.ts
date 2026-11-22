@@ -17,7 +17,8 @@ interface Side extends Omit<SideSnapshot, "engine" | "answerTimes" | "answerStat
 export interface ArenaResult { winner: number | null; reason: MatchEndReason }
 const sideKey = (side: number) => "side-" + side;
 
-export const matchMode = (size: number): MatchMode => size === 4 ? "doubles" : size === 3 ? "free-for-all" : "duel";
+export const matchMode = (size: number, sideCount?: number): MatchMode =>
+  size === 4 && sideCount === 4 ? "ffa4" : size === 4 ? "doubles" : size === 3 ? "free-for-all" : "duel";
 
 export class Arena {
   private readonly sides = new Map<number, Side>();
@@ -207,7 +208,13 @@ export class Arena {
   }
 
   remote(sideIndex: number, playerId: string, clockOffset = 0): RemoteControls {
-    if (this.sharedEngine) return {};
+    if (this.sharedEngine) {
+      const slot = this.sharedSeats.get(playerId)?.slot;
+      if (!slot || (this.controls !== "bomberman" && this.controls !== "dojo-fighter")) return {};
+      const scene = this.sharedEngine.getState(sideKey(sideIndex));
+      const players = scene.kind === "bomberman" ? scene.players : scene.kind === "dojo-fighter" ? scene.fighters : [];
+      return players.some(player => player.id === slot && !player.alive) ? { eliminated: true } : {};
+    }
     const panel = this.panel(sideIndex);
     if (panel.completion) return { completion: panel.completion };
     const prompt = panel.scene?.kind === "quiz" ? panel.scene.prompt : undefined;

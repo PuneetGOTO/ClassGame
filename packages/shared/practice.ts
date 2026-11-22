@@ -1,4 +1,4 @@
-import type { MatchEndReason, MatchPanel, RemoteControls } from "./protocol";
+import type { BombermanMode, MatchEndReason, MatchPanel, RemoteControls } from "./protocol";
 
 export const practiceSeats = ["P1", "P2"] as const;
 export type PracticeSeat = typeof practiceSeats[number];
@@ -8,6 +8,7 @@ export const practiceNames: Record<PracticeSeat, string> = { P1: "測試帳號 1
 export interface PracticeView {
   role: PracticeRole;
   gameId: string;
+  bombermanMode?: BombermanMode;
   screenOnline: boolean;
   seats: Record<PracticeSeat, boolean>;
   round: {

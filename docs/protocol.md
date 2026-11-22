@@ -19,6 +19,10 @@ flowchart LR
 
 霓虹氣墊球在同桌的 1 對 1 或 2 對 2 中使用 `stick` 操作。手機發送範圍為 −1 至 1 的 `x` 和 `y`，置中時發送零向量。伺服器限制球拍的半場範圍，計算碰撞、進球及比分。先進 5 球可提前結算，60 秒到時比較比分。
 
+霓虹炸彈人的正式場次須四人就緒。伺服器依場次種子決定 2 對 2 或四人混戰，混戰的陣營編號為 0 至 3。手機提交四向長按、`release` 及 `bomb`。練習房透過 `practice:select` 的 `bombermanMode` 選擇 `2v2` 或 `1v1v1v1`，各由兩位真人與兩位 AI 開局。
+
+和風劍道支援 1 對 1 或 2 對 2。手機發送 `hold-left`、`hold-right`、`release`、`jump` 及 `attack`。兩款遊戲的手機在自己的角色出局後收到 `remote.eliminated`。
+
 ## Socket.IO
 
 Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入驗證位於 [protocol.ts](../packages/shared/protocol.ts)。
@@ -58,7 +62,7 @@ Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入
 
 陪打由 `match:assist` 報名。陪打參賽者的 `assisting` 為真，結算記錄保留勝負及操作資料，計入分為 0。正式賽同方答題紀錄的 `metrics.attempted` 與 `metrics.correct` 代表個人，`metrics.sideAnswers` 代表該方合計。
 
-氣墊球站點的大螢幕須提供介面版本 `screenVersion: 4`。排球站點最低接受版本 3，其餘站點最低接受版本 2。重新整理大螢幕可沿用瀏覽器內原有的專屬金鑰。
+炸彈人與劍道對決站點的大螢幕須提供 `screenVersion: 5`。氣墊球、排球與其他站點最低分別接受版本 4、3 與 2。重新整理大螢幕可沿用瀏覽器內原有的專屬金鑰。
 
 ## SQLite
 

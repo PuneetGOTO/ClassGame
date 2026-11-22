@@ -97,17 +97,6 @@ for (const tier of [undefined, ...routeTiers]) test("05 Water Sort is solvable a
   solution.forEach((index,i) => assert.equal(game.handleInput("a",cell(index),frame(i*100)),true));
   assert.ok(game.checkWin("a"));
 });
-test("06 Maze Muncher collects 12 reachable dots", () => {
-  const game = factory(6);
-  for (let i = 0; i < 12; i++) {
-    const board = game.getState() as Board;
-    const start = board.tiles.findIndex(tile => tile.kind === "player");
-    const best = board.tiles.flatMap((tile, index) => tile.kind === "dot" ? [shortest(board,start,index)] : [])
-      .sort((a,b) => a.length - b.length)[0];
-    best.forEach(direction => assert.ok(game.handleInput("a",move(direction),frame(100*i))));
-  }
-  assert.ok(game.checkWin("a"));
-});
 test("08 Star Defender's real projectiles can defeat eight moving enemies", () => {
   const game = factory(8);
   let elapsed = 0;

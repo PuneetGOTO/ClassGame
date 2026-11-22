@@ -23,7 +23,9 @@ export const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("cursor"), direction: directionSchema }),
   z.object({ kind: z.literal("choice"), questionId: z.number().int().positive(), index: z.number().int().min(0).max(3) }),
   z.object({ kind: z.literal("cell"), index: z.number().int().min(0).max(2_000) }),
-  z.object({ kind: z.literal("action"), action: z.enum(["shoot", "jump", "duck", "interact", "hold-left", "hold-right", "release", "attack"]) }),
+  z.object({ kind: z.literal("action"), action: z.enum([
+    "shoot", "jump", "duck", "interact", "hold-left", "hold-right", "hold-up", "hold-down", "release", "bomb", "attack"
+  ]) }),
   z.object({ kind: z.literal("stick"), x: z.number().finite().min(-1).max(1), y: z.number().finite().min(-1).max(1) }),
   z.object({ kind: z.literal("answer"), questionId: z.number().int().nonnegative(), value: z.string().trim().min(1).max(64) })
 ]);
@@ -180,7 +182,64 @@ export interface DojoFighterScene {
   soundSeq: number;
   lastSound: "none" | "swing" | "hit" | "clash" | "ko" | "taiko";
 }
-export type Scene = Board | Tubes | Quiz | Arcade | VolleyballScene | AirHockeyScene | DojoFighterScene;
+export type BombermanMode = "2v2" | "1v1v1v1";
+export type BombermanPowerupKind = "flame" | "bomb" | "speed";
+export interface BombermanPlayer {
+  id: string;
+  side: number;
+  slot: number;
+  isBot?: boolean;
+  x: number;
+  y: number;
+  dir: Direction;
+  alive: boolean;
+  maxBombs: number;
+  activeBombs: number;
+  flameRange: number;
+  speedLevel: number;
+  kills: number;
+  bricks: number;
+}
+export interface BombermanBomb {
+  id: number;
+  col: number;
+  row: number;
+  ownerSide: number;
+  range: number;
+  fuseLeftMs: number;
+}
+export interface BombermanFlame {
+  col: number;
+  row: number;
+  ownerSide: number;
+  ttlMs: number;
+  kind: "center" | "h" | "v";
+}
+export interface BombermanPowerup {
+  col: number;
+  row: number;
+  kind: BombermanPowerupKind;
+}
+export interface BombermanScene {
+  kind: "bomberman";
+  mode: BombermanMode;
+  cols: number;
+  rows: number;
+  tiles: string;
+  elapsedMs: number;
+  shrinkStartMs: number;
+  shrinkStep: number;
+  nextShrink: { col: number; row: number; warnRatio: number } | null;
+  players: BombermanPlayer[];
+  bombs: BombermanBomb[];
+  flames: BombermanFlame[];
+  powerups: BombermanPowerup[];
+  finished: boolean;
+  winnerSide: number | null;
+  eventSeq: number;
+  lastEvent: "none" | "bomb" | "explode" | "powerup" | "ko" | "shrink";
+}
+export type Scene = Board | Tubes | Quiz | Arcade | VolleyballScene | AirHockeyScene | BombermanScene | DojoFighterScene;
 export interface AnswerStats { attempted: number; correct: number }
 export interface ResultMetrics extends Partial<AnswerStats> { progress?: Progress; sideAnswers?: AnswerStats }
 
@@ -224,7 +283,7 @@ export type SideCompletion = "cleared" | "exhausted";
 export interface MatchPanel {
   side: number; scene: Scene | null; progress: Progress | null; cursor: number | null; completion?: SideCompletion;
 }
-export interface RemoteControls { questionId?: number; choices?: number; completion?: SideCompletion; answerAvailableAt?: number }
+export interface RemoteControls { questionId?: number; choices?: number; completion?: SideCompletion; answerAvailableAt?: number; eliminated?: boolean }
 export interface MatchView {
   mode: MatchMode; arrivalDeadline: number; winner: number | null;
   panels?: MatchPanel[]; remote?: RemoteControls;
@@ -300,7 +359,7 @@ export interface ClientEvents {
     ack: (value: Ack<{ token: string; view: PracticeView }>) => void) => void;
   "practice:leave": (body: null, ack: (value: Ack) => void) => void;
   "practice:release": (body: { seat: PracticeSeat }, ack: (value: Ack<PracticeView>) => void) => void;
-  "practice:select": (body: { gameId: string }, ack: (value: Ack<PracticeView>) => void) => void;
+  "practice:select": (body: { gameId: string; bombermanMode?: BombermanMode }, ack: (value: Ack<PracticeView>) => void) => void;
   "practice:start": (body: null, ack: (value: Ack<PracticeView>) => void) => void;
   "practice:stop": (body: null, ack: (value: Ack<PracticeView>) => void) => void;
   "practice:input": (body: z.infer<typeof inputSchema>, ack: (value: Ack<{ seq: number }>) => void) => void;
