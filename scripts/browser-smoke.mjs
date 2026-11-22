@@ -253,10 +253,57 @@ try {
     await dashboard.getByLabel(/每場觸發機率/).fill("20");
     await dashboard.getByRole("button", { name: "儲存遊戲規則" }).click();
     await dashboard.getByText("雙倍挑戰機率已更新").waitFor();
+
+    await dashboard.getByRole("button", { name: "測試遊戲" }).click();
+    const [practiceScreen] = await Promise.all([
+      dashboard.waitForEvent("popup"),
+      dashboard.getByRole("link", { name: "開啟測試大螢幕" }).click()
+    ]);
+    track(practiceScreen);
+    await practiceScreen.getByText("等待手機掃碼連線").waitFor();
+    const practicePhones = await Promise.all(["P1", "P2"].map(async role => {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+      track(page);
+      const fresh = await practiceScreen.waitForFunction(seat => {
+        const link = document.querySelector('.practice-seat a[href*="role=' + seat + '"]');
+        if (!link?.querySelector("img")) return false;
+        const key = new URLSearchParams(new URL(link.href).hash.slice(1)).get("key");
+        return key && Number(key.split(".")[0]) > Date.now() + 2500 ? link.href : false;
+      }, role, { timeout: 15_000 });
+      await page.goto(await fresh.jsonValue());
+      await page.locator(".remote-player").getByText(role, { exact: false }).waitFor();
+      return page;
+    }));
+    await practiceScreen.getByText("兩支手掣已連線").waitFor();
+    assert.equal(await practicePhones[0].locator("select option").count(), 20);
+    await practicePhones[0].getByLabel("選擇遊戲").selectOption("game-10");
+    await practiceScreen.getByRole("heading", { name: "心算挑戰", exact: true }).waitFor();
+    await practicePhones[1].getByRole("heading", { name: "心算挑戰", exact: true }).waitFor();
+    await practicePhones[1].getByRole("button", { name: "開始測試" }).tap();
+    await practiceScreen.locator(".arena-panel").nth(1).waitFor();
+    await practicePhones[0].getByRole("button", { name: "A", exact: true }).tap();
+    await eventually(async () => assert.equal(await practiceScreen.locator(".arena-panel").first()
+      .locator(".quiz-meta strong").first().innerText(), "1"));
+    assert.equal(await practicePhones[0].locator(".quiz-prompt, .board, .arena-panel").count(), 0);
+    if (process.env.CAMPUS_SCREENSHOTS) {
+      await practiceScreen.screenshot({ path: "test-results/practice-screen.png", animations: "disabled" });
+      await practicePhones[0].screenshot({ path: "test-results/practice-controller.png", animations: "disabled" });
+    }
+    await practicePhones[0].getByRole("button", { name: "結束這局" }).tap();
+    await practicePhones[1].getByLabel("選擇遊戲").selectOption("game-03");
+    await practiceScreen.getByRole("heading", { name: "水管拼接", exact: true }).waitFor();
+    await practiceScreen.getByRole("button", { name: "開始測試" }).click();
+    await practicePhones[0].getByRole("button", { name: "向下" }).waitFor();
+    assert.equal(await practiceScreen.locator(".arena-panel .board").count(), 2);
+    for (const width of [1440, 1024, 768, 390]) {
+      await practiceScreen.setViewportSize({ width, height: 900 });
+      assert.equal(await practiceScreen.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    }
+    assert.equal((await (await fetch(origin + "/api/campus")).json()).leaderboard.players.length, 4);
   }
   assert.deepEqual(consoleErrors, []);
   console.log("Browser smoke passed: both floors, QR rotation, wrong-room rejection, 2 vs 2 with four mobile remotes, split-screen questions, reconnect, weighted result and rankings."
-    + (!process.env.SKIP_BROWSER_ADMIN ? " Admin audit and CSV checked." : ""));
+    + (!process.env.SKIP_BROWSER_ADMIN ? " Admin audit, CSV and two-account practice checked." : ""));
 } catch (error) {
   console.error(output);
   throw error;

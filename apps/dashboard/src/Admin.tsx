@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
-  ArrowsLeftRight, ArrowRight, ClipboardText, Copy, DownloadSimple, Flag, GearSix, Key, Lightning, LinkSimple,
+  ArrowsLeftRight, ArrowRight, ClipboardText, Copy, DownloadSimple, Flag, GameController, GearSix, Key, Lightning, LinkSimple,
   ListChecks, MapPin, PencilSimple, Plug, Plus, ShieldCheck, Trash, UsersThree, Warning
 } from "@phosphor-icons/react";
 import { gameById, TEAM_SIZE } from "../../../packages/shared/catalog";
@@ -45,6 +45,7 @@ export function Admin({ connection }: { connection: CampusConnection }) {
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<Confirm>();
   const [confirmValue, setConfirmValue] = useState("");
+  const [practiceLink, setPracticeLink] = useState("");
 
   useEffect(() => {
     if (!secret) return;
@@ -120,7 +121,12 @@ export function Admin({ connection }: { connection: CampusConnection }) {
   return <main id="main" className="shell dashboard admin-page">
     <div className="page-intro" data-enter><div><p className="eyebrow"><ShieldCheck size={18}/> 第 {admin.competitionId} 屆正式比賽</p>
       <h1>管理後台</h1><p className="muted">管理站點排程、隊伍名單及正式成績。</p></div>
-      <div className="admin-actions"><button className="button secondary" onClick={logOut}>登出</button>
+      <div className="admin-actions">
+        <button className="button secondary" type="button" disabled={busy} onClick={() => void run(async () => {
+          const { screenKey } = await adminRequest<{ screenKey: string }>(secret, "/practice");
+          setPracticeLink("/practice#" + new URLSearchParams({ key: screenKey }));
+        })}><GameController size={18}/> 測試遊戲</button>
+        <button className="button secondary" onClick={logOut}>登出</button>
         <button className="button primary" type="button" disabled={busy} onClick={() => void exportCsv()}><DownloadSimple size={18}/> 匯出 CSV</button></div>
     </div>
     <div className="segmented admin-tabs">
@@ -162,6 +168,14 @@ export function Admin({ connection }: { connection: CampusConnection }) {
         </table></div>}
       </section>
     </div>}
+    {practiceLink && <Dialog title="測試遊戲" onClose={() => setPracticeLink("")}>
+      <p className="muted">在這台電腦開啟大螢幕，再用兩支手機分別掃描 P1、P2。</p>
+      <div className="admin-actions dialog-actions">
+        <a className="button primary" href={practiceLink} target="_blank" rel="noreferrer" onClick={() => setPracticeLink("")}>
+          開啟測試大螢幕 <ArrowRight size={18}/>
+        </a>
+      </div>
+    </Dialog>}
     {confirm && <Dialog title={confirm.title} onClose={() => setConfirm(undefined)}>
       <p className="muted">{confirm.detail}</p>
       <form className="form-stack" onSubmit={event => {

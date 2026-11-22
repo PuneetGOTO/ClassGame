@@ -14,6 +14,7 @@ import type { PluginFactory } from "../../../packages/game-sdk";
 import { HOST_SCREEN_VERSION } from "../../../packages/shared/rules";
 import { Campus, type PeerData } from "./campus";
 import { entryUrl, hostKey, matchesSecret, webOrigin, type Configuration } from "./config";
+import { Practice } from "./practice";
 import { RequestError, Store } from "./store";
 
 const maxMapBytes = 1_500_000;
@@ -90,9 +91,12 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
   const entry = (origin?: string, station?: string) =>
     entryUrl(config, () => "http://127.0.0.1:" + ((http.address() as AddressInfo | null)?.port ?? 3000), origin, station);
   const campus = new Campus(store, io, plugins, entry, config.hostSecret, now);
+  const practice = new Practice(plugins, config.hostSecret, entry, now);
   const refresh = () => {
     try { campus.step(); }
     catch (error) { campus.recordError(error, "tick"); }
+    try { practice.step(); }
+    catch (error) { campus.recordError(error, "practice"); }
   };
   const interval = options.autoTick === false ? undefined : setInterval(refresh, 80);
 
@@ -154,6 +158,15 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
     socket.on("game:ready", (body, ack) => accept(z.object({ sessionId: sessionIdSchema, ready: z.boolean() }), body, ack,
       data => campus.ready(campus.playerId(socket), data.sessionId, data.ready)));
     socket.on("game:input", (body, ack) => accept(inputSchema, body, ack, data => campus.input(campus.playerId(socket), data)));
+    socket.on("practice:join", (body, ack) => accept(z.object({
+      role: z.enum(["screen", "P1", "P2"]), credential: keySchema, entryOrigin: z.string().max(200).optional()
+    }), body, ack, data => practice.join(socket, data.role, data.credential,
+      webOrigin(data.entryOrigin ?? socket.handshake.headers.origin ?? ""))));
+    socket.on("practice:select", (body, ack) => accept(z.object({ gameId: z.string().max(32) }),
+      body, ack, data => practice.select(socket, data.gameId)));
+    socket.on("practice:start", (body, ack) => accept(z.null(), body, ack, () => practice.start(socket)));
+    socket.on("practice:stop", (body, ack) => accept(z.null(), body, ack, () => practice.stop(socket)));
+    socket.on("practice:input", (body, ack) => accept(inputSchema, body, ack, data => practice.input(socket, data)));
     socket.on("host:register", (body, ack) => accept(z.object({
       hostId: hostIdSchema, key: keySchema, entryOrigin: z.string().max(200).optional(), screenVersion: z.number().int().optional()
     }),
@@ -169,7 +182,10 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
       socket.join("admin");
       return campus.adminView();
     }));
-    socket.on("disconnect", () => campus.disconnect(socket));
+    socket.on("disconnect", () => {
+      practice.disconnect(socket);
+      campus.disconnect(socket);
+    });
   });
 
   app.get("/api/health", (_req, res) => res.json({ ok: true, now: now() }));
@@ -198,6 +214,7 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
   app.use("/api/admin", admin);
   const send = <T>(res: express.Response, data: T) => { res.json({ ok: true, data }); };
   admin.get("/state", (_req, res) => send(res, campus.adminView()));
+  admin.get("/practice", (_req, res) => send(res, { screenKey: practice.key("screen") }));
   admin.get("/hosts/:id/key", (req, res) => {
     const id = validation(hostIdSchema, req.params.id);
     send(res, { key: hostKey(config.hostSecret, id) });
@@ -308,7 +325,7 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
   app.use("/api", (_req, res) => { res.status(404).json({ ok: false, error: "找不到 API", code: "not-found" }); });
   if (config.staticRoot && existsSync(join(config.staticRoot, "index.html"))) {
     app.use(express.static(config.staticRoot));
-    app.get(["/", "/controller", "/host", "/leaderboard", "/admin"], (_req, res) => res.sendFile(join(config.staticRoot!, "index.html")));
+    app.get(["/", "/controller", "/host", "/leaderboard", "/admin", "/practice"], (_req, res) => res.sendFile(join(config.staticRoot!, "index.html")));
     app.use((_req, res) => res.status(404).sendFile(join(config.staticRoot!, "index.html")));
   }
   app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -325,7 +342,7 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
   });
 
   return {
-    app, http, io, campus, store,
+    app, http, io, campus, store, practice,
     listen: (port: number, address: string) => new Promise<number>((resolve, reject) => {
       http.once("error", reject);
       http.listen(port, address, () => {

@@ -4,6 +4,7 @@ import { COUNTDOWN_MS, GAME_MS, GAMES } from "../../../packages/shared/catalog";
 import { floorLabel, type Floor } from "../../../packages/shared/floors";
 import { DOUBLE_END_MS, DOUBLE_START_MS, MATCH_ARRIVAL_MS, MIN_MATCH_PLAYERS, STATION_SCAN_GRANT_MS } from "../../../packages/shared/rules";
 import { ROUTE_LENGTH, routeTier, type Difficulty } from "../../../packages/shared/route";
+import type { PracticeRole } from "../../../packages/shared/practice";
 import type {
   AdminState, CampusState, ClientEvents, EndReason, HostView, PlayerView, RoomView, ServerEvents, StationEntry, StationView
 } from "../../../packages/shared/protocol";
@@ -14,7 +15,7 @@ import { checkStationQr, qrExpiry, stationQr } from "./station-qr";
 import { Arena, matchMode } from "./arena";
 import { selectMatch, type MatchChoice } from "./matchmaking";
 
-export type PeerData = { playerId?: string; hostId?: string; entryOrigin?: string;
+export type PeerData = { playerId?: string; hostId?: string; entryOrigin?: string; practiceRole?: PracticeRole;
   stationScan?: { stationId: string; hostConnection: string; expiresAt: number } };
 export type CampusSocket = Socket<ClientEvents, ServerEvents, Record<string, never>, PeerData>;
 export type CampusIO = Server<ClientEvents, ServerEvents, Record<string, never>, PeerData>;
@@ -220,7 +221,7 @@ export class Campus {
     send(this.hosts.get(room.row.host_id), this.roomView(room));
   }
   private requireFreeSocket(socket: CampusSocket) {
-    if (socket.data.playerId || socket.data.hostId) throw new RequestError("此連線已綁定身分", "bound", 409);
+    if (socket.data.playerId || socket.data.hostId || socket.data.practiceRole) throw new RequestError("此連線已綁定身分", "bound", 409);
   }
   playerId(socket: CampusSocket) {
     const id = socket.data.playerId;

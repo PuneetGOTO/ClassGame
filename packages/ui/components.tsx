@@ -82,7 +82,7 @@ export function Countdown({ end, offset, className = "", secondsOnly = false }: 
     [Math.floor(seconds / 60), seconds % 60].map(n => String(n).padStart(2, "0")).join(":");
   return <span className={"clock " + (seconds !== null && seconds <= 10 ? "clock-low " : "") + className}>{text}</span>;
 }
-export function RoomClock({ room, offset }: { room: RoomView | null | undefined; offset: number }) {
+export function RoomClock({ room, offset }: { room: Pick<RoomView, "status" | "startedAt" | "deadline"> | null | undefined; offset: number }) {
   return <Countdown end={room?.status === "countdown" ? room.startedAt : room?.status === "running" ? room.deadline : undefined}
     offset={offset} secondsOnly={room?.status === "countdown"}/>;
 }
@@ -92,15 +92,16 @@ export function ProgressBar({ progress }: { progress: Progress }) {
     <progress value={progress.value} max={Math.max(1, progress.target)} aria-label={progress.label}/>
   </div>;
 }
-export function Qr({ url }: { url: string }) {
+export function Qr({ url, label = "手機入場", newTab = false }: { url: string; label?: string; newTab?: boolean }) {
   const [qr, setQr] = useState("");
   useEffect(() => {
     let live = true;
     QRCode.toDataURL(url, { width: 260, margin: 3 }).then(data => { if (live) setQr(data); }).catch(() => {});
     return () => { live = false; };
   }, [url]);
-  return <a className="qr-link" href={url} aria-label="開啟手機入場頁">
-    {qr ? <img src={qr} alt="手機入場 QR Code" width="260" height="260"/> : <span className="qr-loading"><QrCode size={42}/></span>}
+  return <a className="qr-link" href={url} aria-label={"開啟" + label + "頁"} target={newTab ? "_blank" : undefined}
+    rel={newTab ? "noreferrer" : undefined}>
+    {qr ? <img src={qr} alt={label + " QR Code"} width="260" height="260"/> : <span className="qr-loading"><QrCode size={42}/></span>}
   </a>;
 }
 export function Dialog({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {

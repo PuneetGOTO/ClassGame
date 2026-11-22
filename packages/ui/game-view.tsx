@@ -4,8 +4,9 @@ import {
   Check, Crosshair, Eraser, Flag, Lightning
 } from "@phosphor-icons/react";
 import { teamColors, type Controls } from "../shared/catalog";
-import type { Action, Direction, RemoteControls, RoomView, Scene } from "../shared/protocol";
-import { fmtScore, Status } from "./components";
+import type { Action, Direction, MatchPanel, Member, RemoteControls, RoomView, Scene } from "../shared/protocol";
+import { sideLabels } from "../shared/route";
+import { fmtScore, ProgressBar, Status } from "./components";
 
 const directions: [Direction, string, typeof ArrowUp][] = [
   ["up", "向上", ArrowUp], ["left", "向左", ArrowLeft], ["down", "向下", ArrowDown], ["right", "向右", ArrowRight]
@@ -18,6 +19,26 @@ const defaultTileNames: Record<string, string> = {
 };
 
 export const optionLetters = ["A", "B", "C", "D"] as const;
+
+type SideMember = Pick<Member, "id" | "name" | "position" | "side">;
+
+export function SideNames({ members, side }: { members: SideMember[]; side: number }) {
+  return <div className="arena-side-names">
+    {members.filter(member => member.side === side).map(member => <span key={member.id}>
+      <b>P{member.position}</b> {member.name}
+    </span>)}
+  </div>;
+}
+
+export function ArenaPanels({ panels, members }: { panels: MatchPanel[]; members: SideMember[] }) {
+  return <div className="arena-panels" data-sides={panels.length} aria-label="即時對戰">
+    {panels.map(panel => <section className="arena-panel" key={panel.side} data-side={panel.side}>
+      <header><h2>{sideLabels[panel.side]}</h2><SideNames members={members} side={panel.side}/></header>
+      <div className="arena-board">{panel.scene && <SceneView scene={panel.scene} cursor={panel.cursor}/>}</div>
+      {panel.cleared ? <p className="arena-cleared">已達成任務</p> : panel.progress && <ProgressBar progress={panel.progress}/>}
+    </section>)}
+  </div>;
+}
 
 export function SceneView({ scene, cursor }: { scene: Scene; cursor?: number | null }) {
   if (scene.kind === "grid") return <div className="board" style={{ "--cols": scene.width, "--rows": scene.height } as CSSProperties} aria-label="遊戲棋盤">

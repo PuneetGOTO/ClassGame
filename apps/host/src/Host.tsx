@@ -5,8 +5,8 @@ import { floorLabel } from "../../../packages/shared/floors";
 import { HOST_SCREEN_VERSION, STATION_QR_MS } from "../../../packages/shared/rules";
 import type { HostView, Result, RoomView, StationEntry, TeamResult } from "../../../packages/shared/protocol";
 import { modeTitle, sideLabels } from "../../../packages/shared/route";
-import { Brand, Countdown, DoubleBanner, ErrorText, fmtChange, HomeLink, ProgressBar, Qr, RoomClock, StationStatus, Status } from "../../../packages/ui/components";
-import { Members, SceneView } from "../../../packages/ui/game-view";
+import { Brand, Countdown, DoubleBanner, ErrorText, fmtChange, HomeLink, Qr, RoomClock, StationStatus, Status } from "../../../packages/ui/components";
+import { ArenaPanels, Members, SideNames } from "../../../packages/ui/game-view";
 import { message, request, socket, type CampusConnection } from "../../../packages/ui/network";
 
 const savedHost = "campus.host";
@@ -112,7 +112,7 @@ export function Host({ connection }: { connection: CampusConnection }) {
           <div className="host-clock"><RoomClock room={room} offset={offset}/><span>{room?.status === "countdown" ? "開始倒數" : "剩餘時間"}</span></div>
         </div>
         {room?.status === "running" && room.doubleChallenge && <DoubleBanner challenge={room.doubleChallenge} team={false}/>}
-        {room?.status === "running" ? <ArenaPanels room={room}/>
+        {room?.status === "running" ? <ArenaPanels panels={room.match?.panels ?? []} members={room.members}/>
           : room?.status === "countdown" ? <div className="host-stage countdown-center"><span>拿好手機，準備開局</span><RoomClock room={room} offset={offset}/>
             <SideRoster room={room}/></div>
           : room?.status === "finished" ? <div className={"host-stage host-outcome " + (room.match?.winner != null ? "won" : "lost")}>
@@ -141,29 +141,10 @@ export function Host({ connection }: { connection: CampusConnection }) {
   </main>;
 }
 
-function SideNames({ room, side }: { room: RoomView; side: number }) {
-  return <div className="arena-side-names">
-    {room.members.filter(member => member.side === side).map(member => <span key={member.id}>
-      <b>P{member.position}</b> {member.name}
-    </span>)}
-  </div>;
-}
-
 function SideRoster({ room }: { room: RoomView }) {
   const sides = [...new Set(room.members.flatMap(member => member.side === null ? [] : [member.side]))].sort();
   return <div className="host-side-roster">{sides.map(side => <div key={side} data-side={side}>
-    <strong>{sideLabels[side]}</strong><SideNames room={room} side={side}/>
+    <strong>{sideLabels[side]}</strong><SideNames members={room.members} side={side}/>
   </div>)}</div>;
-}
-
-function ArenaPanels({ room }: { room: RoomView }) {
-  const panels = room.match?.panels ?? [];
-  return <div className="arena-panels" data-sides={panels.length} aria-label="即時對戰">
-    {panels.map(panel => <section className="arena-panel" key={panel.side} data-side={panel.side}>
-      <header><h2>{sideLabels[panel.side]}</h2><SideNames room={room} side={panel.side}/></header>
-      <div className="arena-board">{panel.scene && <SceneView scene={panel.scene} cursor={panel.cursor}/>}</div>
-      {panel.cleared ? <p className="arena-cleared">已達成任務</p> : panel.progress && <ProgressBar progress={panel.progress}/>}
-    </section>)}
-  </div>;
 }
 

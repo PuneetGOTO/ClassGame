@@ -114,7 +114,11 @@ export async function harness(dbPath = ":memory:", start = 100_000, realTime = f
     step(3000);
     return service.campus.playerView(players[0].id).room!;
   }
-  function step(delta = 0) { time += delta; service.campus.step(); }
+  function step(delta = 0) {
+    time += delta;
+    service.campus.step();
+    service.practice.step();
+  }
   async function admin(path: string, body?: unknown, method = body === undefined ? "GET" : "POST") {
     return fetch(origin + "/api/admin" + path, {
       method, headers: { Authorization: "Bearer " + credentials.adminKey, "Content-Type": "application/json" },

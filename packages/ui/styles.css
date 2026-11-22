@@ -375,6 +375,15 @@ button.tile:hover { box-shadow: inset 0 0 0 2px var(--blue); }
 .host-scene .quiz-prompt { font-size: 2.25rem; line-height: 2.5rem; }
 .host-scene .glass { height: 180px; }
 .host-scene .tubes { width: min(100%,440px); }
+.practice-controls { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.practice-controls .field { flex: 1 1 180px; }
+.practice-controls .button { min-height: 44px; }
+.practice-controls p { flex-basis: 100%; }
+.practice-display .practice-idle { min-height: 280px; }
+.practice-seat .section-line { flex-wrap: wrap; }
+.practice-seat .qr-link { width: min(100%,178px); margin-inline: auto; }
+.practice-seat p { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.remote-panel .practice-controls { padding-top: 12px; border-top: 1px solid var(--line); }
 .admin-page { display: grid; gap: 16px; }
 .admin-page .page-intro { margin-bottom: 8px; }
 .admin-actions,.player-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
