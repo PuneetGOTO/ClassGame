@@ -22,7 +22,7 @@
 | [16 勇者冒險](../local-games/game-16/index.ts) | [server/js/formulas.js](https://github.com/matheopalmier/browserquest/blob/69d9fc179d0c1ea012079b69bbccf7698bfd2982/server/js/formulas.js) | MPL-2.0 | 採用 MPL 戰鬥數值公式，調整短地圖的守衛與出口任務 |
 | [17 龍之遠征](../local-games/game-17/index.ts) | [server/src/index.js](https://github.com/simon-borjeson/WebCraft/blob/8854deafc80e535d2580835786b18269c8eb3bc9/server/src/index.js) | MIT | 改造近距離追蹤，新增個人晶石與巨龍任務 |
 | [18 數學快答](../local-games/game-18/index.ts) | [games/mathduel.js](https://github.com/assishmoncs/battlebox/blob/072659ace68261e05ce0d7b8f3d4e2fc2c9970a7/games/mathduel.js) | MIT | 沿用限時算術概念，個人題流與數字輸入 |
-| [19 數字推理](../local-games/game-19/index.ts) | [games/numberhunt.js](https://github.com/assishmoncs/battlebox/blob/072659ace68261e05ce0d7b8f3d4e2fc2c9970a7/games/numberhunt.js) | MIT | 沿用伺服器隱藏目標，改為每人解自己的推理題 |
+| [19 號站點 · 史萊姆排球](../local-games/game-21/index.ts) | [ClassGame 投稿 PR #1](https://github.com/PuneetGOTO/ClassGame/pull/1) | ClassGame 貢獻程式碼 | 共用球場、排球物理及即時畫面，整合正式配對和 60 秒結算 |
 | [20 數學破磚](../local-games/game-20/index.ts) | [src/games/brain/MathBreakout.jsx](https://github.com/hajunho/zeli-web-games/blob/ba9938eb222cb588ae7b0a6056ba6bdda89dcd9c/src/games/brain/MathBreakout.jsx) | Apache-2.0 | 個人題流與答題破磚，磚數隨難度提升 |
 
 ## 上游可執行性與相依
@@ -38,6 +38,8 @@
 | [BattleBox](https://github.com/assishmoncs/battlebox/tree/072659ace68261e05ce0d7b8f3d4e2fc2c9970a7) | Node.js 22+、Express、Socket.IO、Helmet、Jest | 上游伺服器啟動且回應 HTTP，Number Hunt 的 5 個上游測試通過 |
 
 校園版只需要根目錄 [package.json](../package.json) 中的依賴，完整版本由 [package-lock.json](../package-lock.json) 定位。伺服器使用 Express、Socket.IO、Zod 與 Node 的 `node:sqlite`。介面使用 React、Vite、QRCode、Phosphor Icons 和 Geist。正式部署將所有前端資產從中央伺服器送出，遊玩期間可以使用無外網的區網。
+
+史萊姆排球取自 [投稿提交 97e71b6](https://github.com/qt1988117-debug/ClassGame/commit/97e71b60a5303b2663623ecb7907d42dd821acd6)，不增加執行相依。已下架的數字推理仍以原遊戲 ID 保留成績，歷史程式碼保有 [BattleBox 的 MIT 來源](https://github.com/assishmoncs/battlebox/blob/072659ace68261e05ce0d7b8f3d4e2fc2c9970a7/games/numberhunt.js)。
 
 上游授權全文在 [LICENSES](../local-games/LICENSES/) 中。BrowserQuest 的 MPL-2.0 改編程式保持為獨立的 [upstream-combat.ts](../local-games/game-16/upstream-combat.ts)，附授權全文及固定來源。校園版遊戲畫面與地圖為原創，BrowserQuest 的原作美術、音訊與內容授權資料請見上游的 [授權說明](https://github.com/matheopalmier/browserquest/blob/69d9fc179d0c1ea012079b69bbccf7698bfd2982/LICENSE)。
 

@@ -1,4 +1,5 @@
 import { randomInt } from "node:crypto";
+import { gameById } from "../../../packages/shared/catalog";
 import { routeTier } from "../../../packages/shared/route";
 import { MATCH_GROUP_WAIT_MS, MATCH_WAIT_MS, MAX_MATCH_PLAYERS, MIN_MATCH_PLAYERS } from "../../../packages/shared/rules";
 import type { Floor } from "../../../packages/shared/floors";
@@ -21,8 +22,11 @@ export function selectMatch(waiting: Candidate[], rooms: RoomChoice[], now: numb
       const others = wait >= MATCH_WAIT_MS ? compatible : sameTier;
       // Leave at least two players together when four seats would leave one alone.
       const size = waiting.length % MAX_MATCH_PLAYERS === 1 && waiting.length >= 5 ? 3 : MAX_MATCH_PLAYERS;
-      const players = [first, ...others.slice(0, size - 1)];
-      if (players.length < (wait >= MATCH_WAIT_MS ? MIN_MATCH_PLAYERS : size)) return [];
+      const isShared = gameById.get(room.gameId)?.sharedArena;
+      const target = isShared && size === 3 ? 2 : size;
+      const players = [first, ...others.slice(0, target - 1)];
+      if (players.length < (wait >= MATCH_WAIT_MS ? MIN_MATCH_PLAYERS : target)) return [];
+      if (isShared && players.length === 3) players.pop();
       const spread = Math.max(...players.map(player => player.step)) - Math.min(...players.map(player => player.step));
       const floorChanges = players.filter(player => player.lastFloor && player.lastFloor !== room.floor).length;
       return [{ stationId: room.id, players, spread, floorChanges }];

@@ -168,7 +168,7 @@ export function Practice({ connection }: { connection: CampusConnection }) {
           </div>
           : round?.status === "finished" ? round.reason === "host-offline"
             ? <div className="host-stage idle"><h2>本局已取消</h2><p>大螢幕重連逾時。</p></div>
-            : <RoundOutcome winner={round.winner} reason={round.reason}/>
+            : <RoundOutcome winner={round.winner} reason={round.reason} panels={view.panels}/>
           : <div className="host-stage idle practice-idle"><GameController size={68} weight="duotone"/>
             <h2>{ready ? "兩支手掣已連線" : "等待手機掃碼連線"}</h2><p>{game.objective}</p>
           </div>}

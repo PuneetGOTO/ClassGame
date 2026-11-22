@@ -17,8 +17,8 @@ import oasis from "./game-15";
 import browserQuest from "./game-16";
 import webCraft from "./game-17";
 import mathDuel from "./game-18";
-import numberHunt from "./game-19";
 import mathBreakout from "./game-20";
+import slimeVolleyball from "./game-21";
 
 export const plugins: ReadonlyMap<string, PluginFactory> = new Map([
   ["game-01", sokoban],
@@ -39,6 +39,6 @@ export const plugins: ReadonlyMap<string, PluginFactory> = new Map([
   ["game-16", browserQuest],
   ["game-17", webCraft],
   ["game-18", mathDuel],
-  ["game-19", numberHunt],
-  ["game-20", mathBreakout]
+  ["game-20", mathBreakout],
+  ["game-21", slimeVolleyball]
 ]);

@@ -119,7 +119,7 @@ export function Host({ connection }: { connection: CampusConnection }) {
         {room?.status === "running" ? <ArenaPanels panels={room.match?.panels ?? []} members={room.members}/>
           : room?.status === "countdown" ? <div className="host-stage countdown-center"><span>拿好手機，準備開局</span><RoomClock room={live ? room : null} offset={offset}/>
             <SideRoster room={room}/></div>
-          : room?.status === "finished" ? <RoundOutcome winner={room.match?.winner ?? null}
+          : room?.status === "finished" ? <RoundOutcome winner={room.match?.winner ?? null} panels={room.match?.panels}
             reason={room.reason === "goal" || room.reason === "completed" || room.reason === "timeout" ? room.reason : null}/>
           : <div className="host-stage idle"><FlagBanner weight="duotone" size={68}/>
             <h2>{room?.status === "lobby" ? "等候玩家掃碼及就緒" : "等待配對玩家"}</h2>

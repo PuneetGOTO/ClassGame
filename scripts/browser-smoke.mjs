@@ -51,6 +51,7 @@ try {
   await dashboard.getByRole("img",{ name: "四樓平面圖" }).waitFor();
   assert.equal(await dashboard.getByRole("img",{ name: "四樓平面圖" }).evaluate(canvas => canvas.getContext("2d").getImageData(450,850,1,1).data[3]),255);
   assert.equal(await dashboard.locator(".map-marker").count(),10);
+  await dashboard.getByRole("button", { name: /414 室 · 史萊姆排球/ }).waitFor();
   await dashboard.getByRole("button", { name: /415 室 · 數學破磚/ }).click();
   await dashboard.getByRole("heading", { name: "四樓 415 室" }).waitFor();
   assert.equal(await dashboard.getByRole("dialog").getByRole("link").count(),0);
@@ -359,6 +360,35 @@ try {
     }));
     await practiceScreen.getByText("兩支手掣已連線").waitFor();
     assert.equal(await practicePhones[0].locator("select option").count(), 20);
+    assert.equal(await practicePhones[0].locator("option[value='game-19']").count(), 0);
+    await practiceScreen.getByRole("heading", { name: "史萊姆排球", exact: true }).waitFor();
+    await practiceScreen.getByRole("button", { name: "開始測試" }).click();
+    await practiceScreen.getByLabel("史萊姆排球實況畫面").waitFor();
+    assert.equal(await practiceScreen.locator(".volleyball-score").count(), 2);
+    for (const [index, mobile] of practicePhones.entries()) {
+      const movement = mobile.getByRole("button", { name: index === 0 ? "向右移動" : "向左移動" });
+      await movement.waitFor();
+      const hit = await movement.boundingBox();
+      assert.ok(hit);
+      await mobile.mouse.move(hit.x + hit.width / 2, hit.y + hit.height / 2);
+      await mobile.mouse.down();
+      await eventually(async () => assert.match(await movement.getAttribute("class"), /is-active/));
+      await wait(140);
+      await mobile.mouse.up();
+      await eventually(async () => assert.doesNotMatch(await movement.getAttribute("class"), /is-active/));
+      await mobile.getByRole("button", { name: "跳躍擊球" }).tap();
+      assert.equal(await mobile.locator("canvas").count(), 0);
+      assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    }
+    await eventually(async () => {
+      const points = await practiceScreen.locator(".volleyball-score").allTextContents();
+      assert.ok(points.map(Number).some(score => score > 0));
+    });
+    if (process.env.CAMPUS_SCREENSHOTS) {
+      await practiceScreen.screenshot({ path: "test-results/volleyball-screen.png", animations: "disabled" });
+      await practicePhones[0].screenshot({ path: "test-results/volleyball-controller.png", animations: "disabled" });
+    }
+    await practiceScreen.getByRole("button", { name: "結束這局" }).click();
     await practicePhones[0].getByLabel("選擇遊戲").selectOption("game-10");
     await practiceScreen.getByRole("heading", { name: "心算挑戰", exact: true }).waitFor();
     await practicePhones[1].getByRole("heading", { name: "心算挑戰", exact: true }).waitFor();

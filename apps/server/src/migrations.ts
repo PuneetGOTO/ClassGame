@@ -333,5 +333,24 @@ CREATE TABLE competition_rosters (
   PRIMARY KEY (competition_id, player_id)
 ) STRICT;
 `
+}, {
+  version: 9,
+  sql: `
+INSERT INTO games(game_id,game_name,category,mode,time_limit,plugin_path,win_condition)
+  VALUES ('game-21','史萊姆排球','adventure','solo',60,'local-games/game-21','限時內球場得分較高的一方獲勝')
+  ON CONFLICT(game_id) DO NOTHING;
+UPDATE hosts SET assigned_game_id='game-21' WHERE assigned_game_id='game-19';
+UPDATE games SET enabled=0 WHERE game_id='game-19';
+
+INSERT OR IGNORE INTO match_search(player_id,queued_at,assisting)
+  SELECT m.player_id, s.created_at, m.route_step=0
+  FROM game_sessions s JOIN session_members m USING(session_id) JOIN players p USING(player_id)
+  JOIN competitions c ON c.id=s.competition_id
+  WHERE s.game_id='game-19' AND s.status IN ('lobby','countdown','running') AND c.closed_at IS NULL
+    AND m.checked_in=1 AND m.forfeited=0 AND p.suspended=0;
+UPDATE game_sessions SET status='cancelled',reason='reset',
+  ended_at=COALESCE(ended_at,CAST(unixepoch('subsec') * 1000 AS INTEGER))
+  WHERE game_id='game-19' AND status IN ('lobby','countdown','running');
+`
 }];
 

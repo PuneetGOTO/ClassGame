@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import { Server } from "socket.io";
 import { z } from "zod";
-import { GAMES, gameById, PLAYER_LIMIT } from "../../../packages/shared/catalog";
+import { GAMES, gameById, NUMBER_HUNT_ID, PLAYER_LIMIT, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
 import {
   type Ack, type ClientEvents, type ServerEvents, floorSchema, hostIdSchema, inputSchema, keySchema, nameSchema, registrationSchema,
   sessionIdSchema, stationIdSchema, stationQrSchema, studentLoginSchema, studentNumberSchema, teamIdSchema
@@ -21,7 +21,7 @@ import { RequestError, Store } from "./store";
 const maxMapBytes = 1_500_000;
 const stationSettings = z.object({
   name: nameSchema, floor: floorSchema.optional(), x: z.number().min(0).max(100), y: z.number().min(0).max(100),
-  hostId: hostIdSchema, gameId: z.string().refine(id => gameById.has(id)), open: z.boolean()
+  hostId: hostIdSchema, gameId: z.string().refine(id => GAMES.some(game => game.id === id)), open: z.boolean()
 });
 const stationAction = z.object({ action: z.enum(["start", "stop", "reset", "clear-queue"]) });
 const mapBody = z.object({ image: z.string().max(2_010_000).nullable() });
@@ -213,7 +213,10 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
     }),
       body, ack, data => {
         if (!matchesSecret(data.key, hostKey(config.hostSecret, data.hostId))) throw new RequestError("主機金鑰不正確", "unauthorized", 401);
-        if (data.screenVersion !== HOST_SCREEN_VERSION) {
+        const legacyScreen = data.screenVersion === 2 && !store.get(
+          "SELECT 1 FROM hosts WHERE host_id=? AND assigned_game_id=?", data.hostId, VOLLEYBALL_ID
+        );
+        if (data.screenVersion !== HOST_SCREEN_VERSION && !legacyScreen) {
           throw new RequestError("請重新整理大螢幕頁面，載入新版對戰畫面", "host-refresh", 409);
         }
         return campus.registerHost(socket, data.hostId, webOrigin(data.entryOrigin ?? socket.handshake.headers.origin ?? ""));
@@ -415,21 +418,24 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
       ]);
       return;
     }
+    const hasNumberHunt = store.get("SELECT 1 FROM official_results WHERE competition_id=? AND game_id=? LIMIT 1",
+      competitionId, NUMBER_HUNT_ID);
+    const games = hasNumberHunt ? [...GAMES, gameById.get(NUMBER_HUNT_ID)!] : GAMES;
     const rows: (string|number)[][] = [
       ["名次", "玩家ID", "玩家", "隊伍", "完成", "勝", "和", "負", "單人分", "多人分", "總分",
-        ...GAMES.map(game => game.name + " 結果"), ...GAMES.map(game => game.name + " 得分"),
-        ...GAMES.map(game => game.name + " 雙倍挑戰")]
+        ...games.map(game => game.name + " 結果"), ...games.map(game => game.name + " 得分"),
+        ...games.map(game => game.name + " 雙倍挑戰")]
     ];
     for (const player of leaderboard.players) {
       const results = new Map(store.officialFor(player.id, competitionId).map(result => [result.gameId, result]));
       rows.push([player.rank, player.id, player.name, player.teamName, player.completed, player.wins, player.ties, player.losses,
         player.soloScore, player.multiScore, player.totalScore,
-        ...GAMES.map(game => {
+        ...games.map(game => {
           const result = results.get(game.id);
           return result ? result.tied ? "和" : result.outcome === "win" ? "勝" : "負" : "未參賽";
         }),
-        ...GAMES.map(game => results.get(game.id)?.awarded ?? 0),
-        ...GAMES.map(game => results.get(game.id)?.doublePoints ? "是" : "")]);
+        ...games.map(game => results.get(game.id)?.awarded ?? 0),
+        ...games.map(game => results.get(game.id)?.doublePoints ? "是" : "")]);
     }
     sendCsv(res, "campus-scores" + suffix + ".csv", rows);
   });

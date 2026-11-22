@@ -17,9 +17,10 @@ function answer(scene: Quiz, action: Action): Action {
   return { kind: "choice", questionId: action.questionId, index };
 }
 
-test("each of the 20 plugins supplies symmetric but independently controlled side boards", () => {
-  for (const game of GAMES) {
-    const match = new Arena(plugins.get(game.id)!, game.id, 57, 2, [0, 1, 0, 1]);
+test("each split-screen plugin supplies symmetric but independently controlled side boards", () => {
+  const seats = [0, 1, 0, 1].map((side, index) => ({ id: "p" + (index + 1), side }));
+  for (const game of GAMES.filter(game => !game.sharedArena)) {
+    const match = new Arena(plugins.get(game.id)!, game.id, 57, 2, seats);
     match.start();
     const first = match.panel(0);
     const opponent = match.panel(1);
@@ -28,7 +29,7 @@ test("each of the 20 plugins supplies symmetric but independently controlled sid
     if (first.scene.kind === "quiz") assert.equal(JSON.stringify(match.remote(0, "p1")).includes("text"), false, game.name);
     else assert.deepEqual(match.remote(0, "p1"), {}, game.name);
     assert.equal(match.input(0, "p1", { kind: "cell", index: 0 }, 0, 0).changed, false);
-    const restored = new Arena(plugins.get(game.id)!, game.id, 57, 2, [0, 1], match.serialize());
+    const restored = new Arena(plugins.get(game.id)!, game.id, 57, 2, seats, match.serialize());
     assert.deepEqual(restored.panel(0), first);
     assert.deepEqual(restored.panel(1), opponent);
   }
@@ -36,7 +37,7 @@ test("each of the 20 plugins supplies symmetric but independently controlled sid
 
 test("Rush Hour gives the win to the side whose car is closer to the exit at the deadline", () => {
   const id = "game-04";
-  const arena = new Arena(plugins.get(id)!, id, 1, 1, [0, 1]);
+  const arena = new Arena(plugins.get(id)!, id, 1, 1, [{ id: "0", side: 0 }, { id: "1", side: 1 }]);
   arena.start();
   const act = (side: number, action: Action) => assert.equal(arena.input(side, String(side), action, 1, 1).played, true);
   act(0, { kind: "cursor", direction: "right" });

@@ -38,7 +38,7 @@ test("solo scoring, partial attendance, mixed team result and ledger idempotency
     assert.deepEqual(db.resultsForSession(mixed.session_id).map(result => [result.rawPoints, result.awarded]),
       [[2,1.6], [2,1.6], [1,1.6], [2,1.6], [1,1.6]]);
 
-    const partial = game(db, "game-19", true);
+    const partial = game(db, "game-20", true);
     settle(db, partial, outcomes(["win", "lose", "absent", "absent", "absent"]), "timeout", 63000);
     assert.equal(db.teamResult(partial.session_id)?.average, 0.6);
     assert.deepEqual(db.resultsForSession(partial.session_id).map(result => result.awarded), [0.6, 0.6, 0, 0, 0]);

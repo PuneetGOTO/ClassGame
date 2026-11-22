@@ -8,6 +8,7 @@ export interface GamePlugin<State> {
   init(context: Context): State;
   start?(state: State, context: Context): void;
   handleInput(state: State, playerId: string, input: Action, frame: Frame): boolean;
+  clearControls?(state: State, playerId?: string): void;
   tick?(state: State, frame: Frame): boolean;
   getState(state: State, viewer?: string): Scene;
   getProgress(state: State, viewer?: string): Progress;
@@ -21,6 +22,7 @@ export interface Engine {
   readonly timed: boolean;
   start(): void;
   handleInput(playerId: string, input: Action, frame: Frame): boolean;
+  clearControls(playerId?: string): void;
   tick(frame: Frame): boolean;
   getState(viewer?: string): Scene;
   getProgress(viewer?: string): Progress;
@@ -39,6 +41,7 @@ export function plugin<State>(definition: GamePlugin<State>): PluginFactory {
       timed: !!definition.tick,
       start: () => definition.start?.(state, context),
       handleInput: (playerId, input, frame) => definition.handleInput(state, playerId, input, frame),
+      clearControls: playerId => definition.clearControls?.(state, playerId),
       tick: frame => definition.tick?.(state, frame) ?? false,
       getState: viewer => definition.getState(state, viewer),
       getProgress: viewer => definition.getProgress(state, viewer),

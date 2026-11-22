@@ -16,8 +16,9 @@ const factory = (number: number, seed = 57, players = [ids[0]]) => {
   return plugins.get(id)!({ playerIds: players, seed });
 };
 
-test("all 20 personal games have seeded, restorable missions at four difficulty levels", () => {
+test("all 20 active games have seeded, restorable states at four difficulty levels", () => {
   assert.equal(plugins.size, 20);
+  assert.equal(GAMES.length, 20);
   assert.ok(GAMES.every(game => game.mode === "solo"));
   for (const game of GAMES) {
     const create = plugins.get(game.id)!;
@@ -268,20 +269,6 @@ for (const [num,name] of [[16,"BrowserQuest"],[17,"WebCraft"]] as const) {
     assert.ok(ids.every(id => game.checkWin(id)));
   });
 }
-test("19 Number Hunt accepts correct deductions independently", () => {
-  const game = factory(19,998,ids);
-  for (const id of ids.slice(0,4)) {
-    for (let i = 0; i < 4; i++) {
-      const q = (game.getState(id) as Quiz).prompt!;
-      const numbers = q.text.match(/-?\d+/g)!.map(Number);
-      const value = i === 0 ? (numbers[2] + numbers[1]) / numbers[0]
-        : i === 1 ? (numbers[1] - numbers[0]) / 2 : i === 2 ? numbers[0] + numbers[1] : numbers[1] / numbers[0];
-      game.handleInput(id,{ kind: "answer", questionId: q.id, value: String(value) },frame(i));
-    }
-  }
-  assert.deepEqual(ids.map(id => game.checkWin(id)),[true,true,true,true,false]);
-  assert.equal(game.isComplete(),false);
-});
 test("20 Math Breakout shares bricks and requires individual contributions", () => {
   const game = factory(20,87,ids);
   for (let i = 0; i < 15; i++) {
