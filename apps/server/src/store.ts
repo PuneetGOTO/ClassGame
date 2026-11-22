@@ -38,11 +38,12 @@ export interface MemberRow {
 export interface MatchTicket { player_id: string; queued_at: number }
 interface SQLRank extends PlayerRank { soloUnits: number; multiUnits: number }
 interface TeamRow { team_id: string; team_name: string; member_count: number }
-type ResultRow = Omit<Result, "participated" | "metrics"> & { participated: number; metrics: string };
+type ResultRow = Omit<Result, "participated" | "tied" | "metrics"> & { participated: number; tied: number; metrics: string };
 
 const resultFields = `
   r.player_id AS playerId, p.player_name AS playerName, r.session_id AS sessionId, r.game_id AS gameId,
   r.team_id AS teamId, r.round_no AS round, NULLIF(r.route_step,0) AS step, r.participated, r.win_or_lose AS outcome, r.raw_points AS rawPoints,
+  (r.participated=1 AND gs.match_tier>0 AND gs.winner_side IS NULL) AS tied,
   r.awarded_units * r.score_weight / 5.0 AS baseAwarded, r.awarded_points AS awarded, r.adjustment_units <> 0 AS doublePoints,
   r.duration, r.created_at AS date, r.metrics
 `;
@@ -51,7 +52,7 @@ const teamResultFields = `
   total_raw_points AS rawTotal, team_average_points AS average, created_at AS date
 `;
 const asResult = (row: ResultRow): Result => ({
-  ...row, participated: Boolean(row.participated), doublePoints: Boolean(row.doublePoints), metrics: JSON.parse(row.metrics)
+  ...row, participated: Boolean(row.participated), tied: Boolean(row.tied), doublePoints: Boolean(row.doublePoints), metrics: JSON.parse(row.metrics)
 });
 const hash = (token: string) => createHash("sha256").update(token).digest("hex");
 const nameKey = (name: string) => name.normalize("NFKC").toLocaleLowerCase("zh-Hant").trim();
@@ -249,16 +250,17 @@ export class Store {
   }
   officialFor(playerId: string, competitionId = this.competitionId) {
     return this.all<ResultRow>(`SELECT ${resultFields} FROM official_results o JOIN game_results r USING(result_id)
-      JOIN players p ON p.player_id=r.player_id WHERE o.competition_id=? AND o.player_id=?
+      JOIN game_sessions gs ON gs.session_id=r.session_id JOIN players p ON p.player_id=r.player_id WHERE o.competition_id=? AND o.player_id=?
       ORDER BY CASE WHEN r.route_step>0 THEN r.route_step ELSE 100 END,r.game_id`, competitionId, playerId).map(asResult);
   }
   recentFor(playerId: string) {
-    const result = this.get<ResultRow>(`SELECT ${resultFields} FROM game_results r JOIN players p ON p.player_id=r.player_id
+    const result = this.get<ResultRow>(`SELECT ${resultFields} FROM game_results r JOIN game_sessions gs USING(session_id) JOIN players p ON p.player_id=r.player_id
       WHERE r.competition_id=? AND r.player_id=? AND r.participated=1 ORDER BY r.result_id DESC LIMIT 1`, this.competitionId, playerId);
     return result ? asResult(result) : null;
   }
   resultsForSession(sessionId: string) {
-    return this.all<ResultRow>(`SELECT ${resultFields} FROM game_results r JOIN players p ON p.player_id=r.player_id WHERE r.session_id=? ORDER BY r.result_id`, sessionId).map(asResult);
+    return this.all<ResultRow>(`SELECT ${resultFields} FROM game_results r JOIN game_sessions gs USING(session_id)
+      JOIN players p ON p.player_id=r.player_id WHERE r.session_id=? ORDER BY r.result_id`, sessionId).map(asResult);
   }
   teamResult(sessionId: string) {
     return this.get<TeamResult>(`SELECT ${teamResultFields} FROM team_results WHERE session_id=?`, sessionId) ?? null;

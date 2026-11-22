@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { COUNTDOWN_MS, GAME_MS, GAMES } from "../packages/shared/catalog";
 import type { PracticeView } from "../packages/shared/practice";
+import type { Action, MatchPanel } from "../packages/shared/protocol";
 import { STATION_QR_MS } from "../packages/shared/rules";
 import { harness, ok, send } from "./socket-helper";
 
@@ -95,3 +96,97 @@ test("two private test accounts can switch games and replay on one display witho
     assert.deepEqual(service.campus.adminView().sessions, []);
   } finally { await service.close(); }
 });
+
+test("the last pair of fraction answers settles immediately even when both miss the target", async () => {
+  const service = await harness();
+  try {
+    const [screen, first, second] = await Promise.all(Array.from({ length: 3 }, service.connect));
+    const { screenKey } = (await (await service.admin("/practice")).json()).data;
+    const { view } = await ok(screen, "practice:join", { role: "screen", credential: screenKey, entryOrigin: service.origin });
+    await ok(first, "practice:join", { role: "P1", credential: code(view, "P1") });
+    await ok(second, "practice:join", { role: "P2", credential: code(view, "P2") });
+    const gameId = "game-13";
+    await ok(first, "practice:select", { gameId });
+    const started = await ok(first, "practice:start", null);
+    service.step(COUNTDOWN_MS);
+    const answer = async (client: typeof first, side: number, index: number, correct: boolean) => {
+      const current = await ok(screen, "practice:select", { gameId });
+      const scene = current.panels![side].scene;
+      assert.ok(scene?.kind === "quiz" && scene.prompt);
+      const [a, b, c, d] = scene.prompt.text.match(/\d+/g)!.map(Number);
+      const option = a * d > c * b ? 0 : a * d === c * b ? 1 : 2;
+      await ok(client, "practice:input", { sessionId: started.round!.id, seq: index + 1,
+        action: { kind: "choice", questionId: scene.prompt.id, index: correct ? option : (option + 1) % 3 } });
+    };
+    for (let index = 0; index < 5; index++) await answer(first, 0, index, index === 0);
+    const half = await ok(screen, "practice:select", { gameId });
+    assert.equal(half.round?.status, "running");
+    assert.equal(half.panels?.[0].completion, "exhausted");
+    assert.equal((await ok(first, "practice:select", { gameId })).remote?.completion, "exhausted");
+    const immediate = [screen, first, second].map(client => new Promise<PracticeView>(resolve => {
+      const receive = (update: PracticeView) => {
+        if (update.round?.status !== "finished") return;
+        client.off("practice:state", receive);
+        resolve(update);
+      };
+      client.on("practice:state", receive);
+    }));
+    for (let index = 0; index < 5; index++) await answer(second, 1, index, index < 3);
+
+    const finished = await ok(screen, "practice:select", { gameId });
+    assert.equal(finished.round?.status, "finished");
+    assert.equal(finished.round?.winner, 1);
+    assert.equal(finished.round?.reason, "completed");
+    assert.ok(service.time() < started.round!.deadline);
+    for (const view of await Promise.all(immediate)) assert.deepEqual(view.round, finished.round);
+  } finally { await service.close(); }
+});
+
+test("all 20 practice games start, accept two handsets, display their inputs, and report a terminal result", async () => {
+  const service = await harness();
+  try {
+    const [screen, first, second] = await Promise.all(Array.from({ length: 3 }, service.connect));
+    const { screenKey } = (await (await service.admin("/practice")).json()).data;
+    const { view } = await ok(screen, "practice:join", { role: "screen", credential: screenKey, entryOrigin: service.origin });
+    await ok(first, "practice:join", { role: "P1", credential: code(view, "P1") });
+    await ok(second, "practice:join", { role: "P2", credential: code(view, "P2") });
+    for (const game of GAMES) {
+      await ok(screen, "practice:select", { gameId: game.id });
+      const started = await ok(screen, "practice:start", null);
+      service.step(COUNTDOWN_MS);
+      const display = () => ok(screen, "practice:select", { gameId: game.id });
+      const before = await display();
+      assert.equal(before.panels?.length, 2, game.id);
+      for (const [side, client] of [first, second].entries()) {
+        const panel = before.panels![side];
+        for (const [index, action] of firstMoves(panel).entries()) {
+          await ok(client, "practice:input", { sessionId: started.round!.id, seq: index + 1, action });
+          if (game.controls === "runner") service.step(80);
+          const visible = (await display()).panels?.[side];
+          if (JSON.stringify(panel) !== JSON.stringify(visible)) break;
+        }
+        assert.notDeepEqual((await display()).panels?.[side], panel, game.id + " display did not change");
+      }
+      service.step(GAME_MS);
+      const ended = await display();
+      assert.equal(ended.round?.status, "finished", game.id);
+      assert.ok(ended.round?.reason, game.id);
+    }
+    assert.deepEqual(service.campus.adminView().sessions, []);
+  } finally { await service.close(); }
+});
+
+function firstMoves(panel: MatchPanel): Action[] {
+  const scene = panel.scene;
+  assert.ok(scene);
+  if (scene.kind === "quiz") {
+    const questionId = scene.prompt!.id;
+    return scene.prompt!.options ? [{ kind: "choice", index: 0, questionId }] : [{ kind: "answer", value: "1", questionId }];
+  }
+  if (panel.cursor !== null) return ["right", "left", "down", "up"].map(direction =>
+    ({ kind: "cursor", direction }) as Action);
+  if (scene.kind === "arcade" && scene.theme !== "road") {
+    return [{ kind: "action", action: scene.theme === "space" ? "shoot" : "jump" }];
+  }
+  return ["left", "right", "up", "down"].map(direction => ({ kind: "move", direction }) as Action);
+}

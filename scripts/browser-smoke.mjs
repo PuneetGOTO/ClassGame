@@ -299,6 +299,34 @@ try {
       await practiceScreen.setViewportSize({ width, height: 900 });
       assert.equal(await practiceScreen.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     }
+    await practiceScreen.setViewportSize({ width: 1440, height: 900 });
+    await practicePhones[0].getByRole("button", { name: "結束這局" }).tap();
+    await practicePhones[0].getByLabel("選擇遊戲").selectOption("game-13");
+    await practicePhones[1].getByRole("heading", { name: "分數比較", exact: true }).waitFor();
+    await practicePhones[1].getByRole("button", { name: "開始測試" }).tap();
+    const practicePanels = practiceScreen.locator(".arena-panel");
+    await practicePanels.nth(1).waitFor();
+    for (const [side, correctCount] of [[0, 1], [1, 3]]) {
+      const panel = practicePanels.nth(side);
+      for (let i = 0; i < 5; i++) {
+        const [a, b, c, d] = (await panel.locator(".quiz-prompt").innerText()).match(/\d+/g).map(Number);
+        const correct = a * d > c * b ? 0 : a * d === c * b ? 1 : 2;
+        const option = "ABC"[i < correctCount ? correct : (correct + 1) % 3];
+        await practicePhones[side].getByRole("button", { name: option, exact: true }).tap();
+        if (side === 0 || i < 4) await attempted(panel, i + 1);
+      }
+      if (side === 0) {
+        await panel.getByText("本方已完成題組", { exact: true }).waitFor({ timeout: 2500 });
+        await practicePhones[side].getByText("本方已完成題組，等候本場結果。").waitFor({ timeout: 2500 });
+      }
+    }
+    await practiceScreen.getByText("橙方獲勝", { exact: true }).waitFor({ timeout: 2500 });
+    await practicePhones[0].getByText("本場落敗", { exact: true }).waitFor({ timeout: 2500 });
+    await practicePhones[1].getByText("本場獲勝", { exact: true }).waitFor({ timeout: 2500 });
+    if (process.env.CAMPUS_SCREENSHOTS) {
+      await practiceScreen.screenshot({ path: "test-results/practice-fraction-result.png", animations: "disabled" });
+      await practicePhones[1].screenshot({ path: "test-results/practice-win-controller.png", animations: "disabled" });
+    }
     assert.equal((await (await fetch(origin + "/api/campus")).json()).leaderboard.players.length, 4);
   }
   assert.deepEqual(consoleErrors, []);

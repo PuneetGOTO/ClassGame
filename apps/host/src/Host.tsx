@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, ArrowsOut, FlagBanner, Monitor, QrCode, Trophy, UsersThree } from "@phosphor-icons/react";
+import { ArrowRight, ArrowsOut, FlagBanner, Monitor, QrCode, UsersThree } from "@phosphor-icons/react";
 import { fixedId, gameById, STATION_COUNT } from "../../../packages/shared/catalog";
 import { floorLabel } from "../../../packages/shared/floors";
 import { HOST_SCREEN_VERSION, STATION_QR_MS } from "../../../packages/shared/rules";
 import type { HostView, Result, RoomView, StationEntry, TeamResult } from "../../../packages/shared/protocol";
 import { modeTitle, sideLabels } from "../../../packages/shared/route";
 import { Brand, Countdown, DoubleBanner, ErrorText, fmtChange, HomeLink, Qr, RoomClock, StationStatus, Status } from "../../../packages/ui/components";
-import { ArenaPanels, Members, SideNames } from "../../../packages/ui/game-view";
+import { ArenaPanels, Members, RoundOutcome, SideNames } from "../../../packages/ui/game-view";
 import { message, request, socket, type CampusConnection } from "../../../packages/ui/network";
 
 const savedHost = "campus.host";
@@ -115,10 +115,8 @@ export function Host({ connection }: { connection: CampusConnection }) {
         {room?.status === "running" ? <ArenaPanels panels={room.match?.panels ?? []} members={room.members}/>
           : room?.status === "countdown" ? <div className="host-stage countdown-center"><span>拿好手機，準備開局</span><RoomClock room={room} offset={offset}/>
             <SideRoster room={room}/></div>
-          : room?.status === "finished" ? <div className={"host-stage host-outcome " + (room.match?.winner != null ? "won" : "lost")}>
-            <Trophy size={64} weight="duotone"/><strong>{room.match?.winner != null ? sideLabels[room.match.winner] + "獲勝" : "本場平手"}</strong>
-            <p>{room.reason === "timeout" ? "60 秒已到" : "達成關卡目標"}</p>
-          </div>
+          : room?.status === "finished" ? <RoundOutcome winner={room.match?.winner ?? null}
+            reason={room.reason === "goal" || room.reason === "completed" || room.reason === "timeout" ? room.reason : null}/>
           : <div className="host-stage idle"><FlagBanner weight="duotone" size={68}/>
             <h2>{room?.status === "lobby" ? "等候玩家掃碼及就緒" : "等待配對玩家"}</h2>
             {room?.match && <p>報到倒數 <Countdown end={room.match.arrivalDeadline} offset={offset}/></p>}
@@ -132,7 +130,7 @@ export function Host({ connection }: { connection: CampusConnection }) {
         <section className="panel host-members"><div className="section-line"><h2><UsersThree size={21}/> 參賽者</h2></div>
           {host.results.length > 0 ? <div className="history-list">{host.results.map(result => <div key={result.playerId}><span>{result.playerName}</span>
             <strong className={result.awarded < 0 ? "negative-points" : undefined}>{result.participated
-              ? (result.outcome === "win" ? "勝 " : "負 ") + fmtChange(result.awarded) + (result.doublePoints ? " · 雙倍" : "")
+              ? (result.tied ? "和 " : result.outcome === "win" ? "勝 " : "負 ") + fmtChange(result.awarded) + (result.doublePoints ? " · 雙倍" : "")
               : "未計分"}</strong></div>)}</div>
           : room ? <Members room={room}/> : <p className="muted">等待玩家加入場次</p>}
         </section>

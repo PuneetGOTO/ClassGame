@@ -488,12 +488,15 @@ export class Campus {
       (!onlineOnly || (!member.forfeited && this.players.has(member.player_id))) ? [member.side] : []));
   }
 
-  private checkGoal(room: Room, now: number) {
+  private checkResult(room: Room, now: number, timeUp = false) {
     const sides = this.playedSides(room);
-    if (sides.size < MIN_MATCH_PLAYERS) return false;
-    const winner = room.arena!.completed(this.playedSides(room, true));
-    if (winner === null) return false;
-    this.finish(room, "goal", now, winner);
+    if (sides.size < MIN_MATCH_PLAYERS) {
+      if (timeUp) this.cancel(room, "no-play", true);
+      return timeUp;
+    }
+    const result = room.arena!.result(this.playedSides(room, true), timeUp);
+    if (!result) return false;
+    this.finish(room, result.reason, now, result.winner);
     return true;
   }
   private throttle(id: string) {
@@ -519,7 +522,7 @@ export class Campus {
     const change = room.arena!.input(member.side, action, now - room.row.started_at!, now);
     if (change.changed) {
       this.checkpoint(room, { member, seq, played: change.played });
-      if (!this.checkGoal(room, now)) this.pushRoom(room);
+      if (!this.checkResult(room, now)) this.pushRoom(room);
     } else {
       this.store.run("UPDATE session_members SET last_seq=? WHERE session_id=? AND player_id=?", seq, sessionId, id);
       member.last_seq = seq;
@@ -547,14 +550,9 @@ export class Campus {
       member.side !== null && !member.forfeited && this.players.has(member.player_id) ? [member.side] : []));
     const changed = arena!.tick(end - row.started_at!, end, online);
     if (changed) this.checkpoint(room);
-    if (now >= row.deadline!) {
-      if (this.playedSides(room).size < MIN_MATCH_PLAYERS) this.cancel(room, "no-play", true);
-      else this.finish(room, "timeout", end, arena!.winner(this.playedSides(room, true)));
-      return;
-    }
+    if (this.checkResult(room, end, now >= row.deadline!)) return;
     this.maybeRevealDouble(room, now);
     if (changed) this.pushRoom(room);
-    this.checkGoal(room, now);
   }
 
   private maybeRevealDouble(room: Room, now: number) {
@@ -563,7 +561,7 @@ export class Campus {
     if (this.playedSides(room).size < MIN_MATCH_PLAYERS) return;
     const candidates = [...members.values()].filter(member =>
       member.participated && member.played && !member.forfeited && member.side !== null &&
-      this.players.has(member.player_id) && !arena!.panel(member.side, false).cleared);
+      this.players.has(member.player_id) && !arena!.panel(member.side, false).completion);
     if (!candidates.length) return;
     const member = candidates[randomInt(candidates.length)];
     const change = this.store.run("UPDATE game_sessions SET double_player_id=?,double_started_at=? WHERE session_id=? AND status='running' AND double_player_id IS NULL",
@@ -601,9 +599,11 @@ export class Campus {
     this.lastAtStation.set(row.station_id, room);
     this.pushRoom(room, reason === "timeout" ? "game:timeout" : "game:finish");
     for (const result of this.store.resultsForSession(row.session_id)) {
-      this.players.get(result.playerId)?.emit("score:result", result);
+      const player = this.players.get(result.playerId);
+      player?.emit("score:result", result);
+      player?.emit("player:update", this.playerView(result.playerId));
       this.hosts.get(row.host_id)?.emit("score:result", result);
-      if (!result.participated) this.players.get(result.playerId)?.emit("system:error", {
+      if (!result.participated) player?.emit("system:error", {
         error: "這場沒有完成有效操作。請重新配對挑戰這一關。", code: "no-play"
       });
     }

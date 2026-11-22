@@ -29,13 +29,15 @@ function simulate(state: State) {
     const target = targets.find(item => state.enemies[item.index].live && overlaps(beam,item));
     if (!target) return true;
     state.enemies[target.index].live = false;
-    state.kills++;
+    state.kills = Math.min(state.target, state.kills + 1);
     return false;
   });
+  if (state.kills === state.target) return true;
   if (targets.some(enemy => enemy.y > 84) || state.enemies.every(enemy => !enemy.live)) {
     state.enemies = wave();
     state.waveAt = state.elapsed;
   }
+  return false;
 }
 export default plugin({
   init: initial,
@@ -49,7 +51,7 @@ export default plugin({
     state.beams.push({ kind: "beam", x: state.x + 3, y: 80, width: 1.7, height: 5 });
     return true;
   },
-  tick: (state, frame) => advance(state, frame.elapsed, simulate),
+  tick: (state, frame) => state.kills < state.target && advance(state, frame.elapsed, simulate),
   getState: state => ({ kind: "arcade", theme: "space", actors: [...enemies(state), ...state.beams,
     { kind: "pilot", x: state.x, y: 86, width: 8, height: 10 }] }),
   getProgress: state => ({ label: "擊落飛船", target: state.target, value: state.kills }),

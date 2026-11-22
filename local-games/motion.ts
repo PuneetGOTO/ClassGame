@@ -5,12 +5,12 @@ export function overlaps(a: ArcadeActor, b: ArcadeActor, pad = 0) {
   return a.x + pad < b.x + b.width && a.x + a.width - pad > b.x &&
     a.y + pad < b.y + b.height && a.y + a.height - pad > b.y;
 }
-export function advance<T extends { elapsed: number }>(state: T, elapsed: number, simulate: (state: T) => void) {
+export function advance<T extends { elapsed: number }>(state: T, elapsed: number, simulate: (state: T) => boolean) {
   const quantum = 40;
   if (elapsed - state.elapsed < quantum) return false;
   while (elapsed - state.elapsed >= quantum) {
     state.elapsed += quantum;
-    simulate(state);
+    if (simulate(state)) break;
   }
   return true;
 }

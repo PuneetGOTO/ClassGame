@@ -3,7 +3,7 @@ import { COUNTDOWN_MS, GAME_MS, gameById } from "../../../packages/shared/catalo
 import { practiceSeats, type PracticeRole, type PracticeSeat, type PracticeView } from "../../../packages/shared/practice";
 import type { ClientEvents } from "../../../packages/shared/protocol";
 import type { PluginFactory } from "../../../packages/game-sdk";
-import { Arena } from "./arena";
+import { Arena, type ArenaResult } from "./arena";
 import type { CampusSocket } from "./campus";
 import { matchesSecret } from "./config";
 import { checkStationQr, qrExpiry, stationQr } from "./station-qr";
@@ -73,7 +73,9 @@ export class Practice {
     return {
       role, gameId: this.gameId, screenOnline: this.peers.has("screen"),
       seats: { P1: this.peers.has("P1"), P2: this.peers.has("P2") },
-      round: state ? { id: state.id, status: state.status, startedAt: state.startedAt, deadline: state.deadline, winner: state.winner } : null,
+      round: state ? {
+        id: state.id, status: state.status, startedAt: state.startedAt, deadline: state.deadline, winner: state.winner, reason: state.reason
+      } : null,
       seq: role === "screen" ? 0 : state?.sequence[role] ?? 0,
       ...(role === "screen" ? {
         entries: this.entries(),
@@ -126,7 +128,7 @@ export class Practice {
     this.clearRound();
     this.round = {
       id: randomUUID(), arena, status: "countdown", startedAt, deadline: startedAt + GAME_MS,
-      winner: null, sequence: { P1: 0, P2: 0 }
+      winner: null, reason: null, sequence: { P1: 0, P2: 0 }
     };
     this.publish(socket);
     return this.view(role);
@@ -157,16 +159,17 @@ export class Practice {
     if (seq <= round.sequence[role]) return { seq: round.sequence[role] };
     round.sequence[role] = seq;
     const change = round.arena.input(sideOf[role], action, now - round.startedAt, now);
-    const winner = round.arena.completed(bothSides);
-    if (winner !== null) this.finish(round, winner);
-    if (change.changed || winner !== null) this.publish();
+    const result = round.arena.result(bothSides);
+    if (result) this.finish(round, result);
+    if (change.changed || result) this.publish();
     return { seq };
   }
 
-  private finish(round: Round, winner: number | null) {
+  private finish(round: Round, { winner, reason }: ArenaResult) {
     round.arena.finish();
     round.status = "finished";
     round.winner = winner;
+    round.reason = reason;
   }
 
   private advance(now: number) {
@@ -180,13 +183,9 @@ export class Practice {
     const time = Math.min(now, round.deadline);
     const online = new Set(practiceSeats.filter(seat => this.peers.has(seat)).map(seat => sideOf[seat]));
     if (round.arena.tick(time - round.startedAt, time, online)) changed = true;
-    if (now >= round.deadline) {
-      this.finish(round, round.arena.winner(bothSides));
-      return true;
-    }
-    const winner = round.arena.completed(bothSides);
-    if (winner === null) return changed;
-    this.finish(round, winner);
+    const result = round.arena.result(bothSides, now >= round.deadline);
+    if (!result) return changed;
+    this.finish(round, result);
     return true;
   }
 

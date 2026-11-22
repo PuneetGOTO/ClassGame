@@ -93,6 +93,7 @@ export default plugin({
     return {
       kind: "grid", width, height,
       tiles: cells.map((cell, index) => ({
+        label: index === state.player ? "●" : undefined,
         kind: index === state.player ? (state.goals.includes(index) ? "player tile-goal" : "player") : state.boxes.includes(index) ? (state.goals.includes(index) ? "box-done" : "box")
           : cell === "#" ? "wall" : state.goals.includes(index) ? "goal" : "floor"
       }))

@@ -245,10 +245,10 @@ export function Controller({ connection }: { connection: CampusConnection }) {
       {room.status === "lobby" &&
         <button className="text-button" onClick={showExit} disabled={!online || busy}><DoorOpen size={16}/> 離開場次</button>}
     </section>}
-    {visibleResult && <section className={"panel result-panel " + (result.outcome === "win" ? "won" : "lost")}>
+    {visibleResult && <section className={"panel result-panel " + (result.outcome === "win" ? "won" : result.tied ? "" : "lost")} data-enter>
       <div className="feature-icon"><Flag size={30} weight="fill"/></div>
       <p className="eyebrow">{result.step && "第 " + result.step + " 關 · "}{gameById.get(result.gameId)?.name}</p>
-      <h1>{result.outcome === "win" ? "闖關成功" : "挑戰失敗"}</h1>
+      <h1 aria-live="polite">{result.tied ? "本場平手" : result.outcome === "win" ? "闖關成功" : "挑戰失敗"}</h1>
       {result.doublePoints && <p className="double-result">×2 雙倍挑戰</p>}
       <p className={"result-points" + (result.awarded < 0 ? " negative-points" : "")}>{fmtChange(result.awarded)} <span>分</span></p>
       <p className="muted">已完成 {player.route.completed} / {ROUTE_LENGTH} 關 · 個人總分 {fmtScore(player.player.totalScore)}</p>
@@ -343,7 +343,7 @@ function GameHistory({ results }: { results: Result[] }) {
   if (!results.length) return <Empty title="暫無闖關紀錄"/>;
   return <div className="history-list">{results.toSorted((a, b) => (a.step ?? 0) - (b.step ?? 0)).map(result =>
     <div key={result.sessionId}><span>{result.step ?? "—"} · {gameById.get(result.gameId)?.name}</span><strong>
-      {(result.outcome === "win" ? "勝 " : "負 ") + fmtChange(result.awarded) + (result.doublePoints ? " · 雙倍" : "")}
+      {(result.tied ? "和 " : result.outcome === "win" ? "勝 " : "負 ") + fmtChange(result.awarded) + (result.doublePoints ? " · 雙倍" : "")}
     </strong></div>)}</div>;
 }
 

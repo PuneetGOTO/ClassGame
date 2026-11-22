@@ -19,7 +19,7 @@ const actionLabels: Record<string,string> = {
   start: "啟動倒數", stop: "停止本場", reset: "作廢本場", "clear-queue": "取消候場"
 };
 const reasons: Record<string,string> = {
-  goal: "達成任務", timeout: "時間到", stopped: "管理員停止", forfeit: "退出", reset: "已重設",
+  goal: "達成任務", completed: "題組完成", timeout: "時間到", stopped: "管理員停止", forfeit: "退出", reset: "已重設",
   "lobby-expired": "候場逾時", "no-play": "未有兩方操作", "host-offline": "大螢幕離線", error: "遊戲錯誤"
 };
 const auditNames: Record<string,string> = {
@@ -498,7 +498,7 @@ function ResultTable({ results, includeGames }: { results: Result[]; includeGame
   return results.length ? <div className="table-scroll"><table>
     <thead><tr><th>{includeGames ? "遊戲" : "參賽者"}</th><th>結果</th><th>原始分</th><th>基礎分</th><th>計入分</th><th>耗時</th><th>任務成果</th></tr></thead>
     <tbody>{results.map(item => <tr key={item.sessionId + item.playerId}><th scope="row">{includeGames ? gameById.get(item.gameId)?.name : item.playerName}</th>
-      <td>{item.outcome === "win" ? "勝" : item.outcome === "lose" ? "負" : "未參賽"}</td><td>{item.rawPoints}</td>
+      <td>{item.tied ? "和" : item.outcome === "win" ? "勝" : item.outcome === "lose" ? "負" : "未參賽"}</td><td>{item.rawPoints}</td>
       <td>{fmtScore(item.baseAwarded)}</td><td className={item.awarded < 0 ? "negative-points" : "em-score"}>{fmtChange(item.awarded)}
         {item.doublePoints && " · 雙倍"}</td><td>{item.participated ? (item.duration / 1000).toFixed(2) + " 秒" : "—"}</td>
       <td>{item.metrics.correct !== undefined ? "答對 " + item.metrics.correct + " / 已答 " + item.metrics.attempted

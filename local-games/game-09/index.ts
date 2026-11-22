@@ -41,9 +41,11 @@ function simulate(state: State) {
     } else if (obstacle.x + obstacle.width < runner.x) {
       obstacle.passed = true;
       state.streak++;
+      if (state.streak === state.target) return true;
     }
   }
   state.obstacles = state.obstacles.filter(obstacle => obstacle.x > -12);
+  return false;
 }
 export default plugin({
   init: initial,
@@ -60,7 +62,7 @@ export default plugin({
     }
     return false;
   },
-  tick: (state, frame) => advance(state, frame.elapsed, simulate),
+  tick: (state, frame) => state.streak < state.target && advance(state, frame.elapsed, simulate),
   getState: state => ({ kind: "arcade", theme: "desert", actors: [...state.obstacles, dino(state)] }),
   getProgress: state => ({ label: "連續閃避障礙", target: state.target, value: state.streak }),
   checkWin: state => state.streak >= state.target

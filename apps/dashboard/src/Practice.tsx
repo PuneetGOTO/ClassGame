@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowsOut, GameController, Monitor, QrCode, Trophy } from "@phosphor-icons/react";
+import { ArrowsOut, GameController, Monitor, QrCode } from "@phosphor-icons/react";
 import { GAMES, categoryLabel, gameById, type Category } from "../../../packages/shared/catalog";
 import { practiceNames, practiceSeats, type PracticeRole, type PracticeView } from "../../../packages/shared/practice";
 import type { Action } from "../../../packages/shared/protocol";
 import { sideLabels } from "../../../packages/shared/route";
 import { Brand, ErrorText, Qr, RoomClock, Status } from "../../../packages/ui/components";
-import { ArenaPanels, GameControls } from "../../../packages/ui/game-view";
+import { ArenaPanels, GameControls, RoundOutcome } from "../../../packages/ui/game-view";
 import { RemoteError, message, request, socket, type CampusConnection } from "../../../packages/ui/network";
 
 const roleParam = new URLSearchParams(location.search).get("role");
@@ -119,7 +119,6 @@ export function Practice({ connection }: { connection: CampusConnection }) {
   </div>;
   if (role !== "screen") {
     const side = practiceSeats.indexOf(role);
-    const result = round?.status === "finished" ? round.winner === null ? "本場平手" : round.winner === side ? "本場獲勝" : "本場落敗" : null;
     return <main id="main" className="controller narrow">
       <section className="panel play-panel remote-panel" data-enter>
         <div className="play-heading"><div><p className="eyebrow">{practiceNames[role]}</p><h1>{game.name}</h1></div>
@@ -129,7 +128,7 @@ export function Practice({ connection }: { connection: CampusConnection }) {
         <ErrorText text={error}/>
         {!online && <p className="notice">正在重新連線</p>}
         {online && !view.screenOnline && <p className="notice">等待測試大螢幕連線</p>}
-        {result && <p className="notice" role="status">{result}</p>}
+        {round?.status === "finished" && <RoundOutcome winner={round.winner} reason={round.reason} side={side}/>}
         {online && view.screenOnline && round?.status === "running" &&
           <GameControls key={round.id} remote={view.remote ?? {}} controls={game.controls} gameId={game.id} send={send}/>}
         {controls}
@@ -160,10 +159,7 @@ export function Practice({ connection }: { connection: CampusConnection }) {
           : round?.status === "countdown" ? <div className="host-stage countdown-center">
             <span>拿好手機，準備開局</span><RoomClock room={round} offset={offset}/>
           </div>
-          : round?.status === "finished" ? <div className="host-stage host-outcome">
-            <Trophy size={58} weight="duotone"/>
-            <strong>{round.winner === null ? "本場平手" : sideLabels[round.winner] + "獲勝"}</strong>
-          </div>
+          : round?.status === "finished" ? <RoundOutcome winner={round.winner} reason={round.reason}/>
           : <div className="host-stage idle practice-idle"><GameController size={68} weight="duotone"/>
             <h2>{ready ? "兩支手掣已連線" : "等待手機掃碼連線"}</h2><p>{game.objective}</p>
           </div>}

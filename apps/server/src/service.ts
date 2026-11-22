@@ -316,7 +316,10 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
       const results = new Map(store.officialFor(player.id).map(result => [result.gameId, result]));
       rows.push([player.rank, player.id, player.name, player.teamName, player.completed, player.wins, player.losses,
         player.soloScore, player.multiScore, player.totalScore,
-        ...GAMES.map(game => results.get(game.id)?.outcome === "win" ? "勝" : results.has(game.id) ? "負" : "未參賽"),
+        ...GAMES.map(game => {
+          const result = results.get(game.id);
+          return result ? result.tied ? "和" : result.outcome === "win" ? "勝" : "負" : "未參賽";
+        }),
         ...GAMES.map(game => results.get(game.id)?.awarded ?? 0),
         ...GAMES.map(game => results.get(game.id)?.doublePoints ? "是" : "")]);
     }

@@ -163,6 +163,20 @@ test("09 Dino Run permits eight consecutive obstacles using both touch actions",
   assert.ok(game.checkWin("a"));
   assert.deepEqual([...used].sort(),["duck","jump"]);
 });
+
+test("09 Dino Run keeps a clear reached during a delayed update", () => {
+  const game = factory(9);
+  const state = JSON.parse(game.serialize());
+  state.streak = state.target - 1;
+  state.obstacles = [
+    { kind: "cactus", x: 10, y: 67, width: 6, height: 17, passed: false },
+    { kind: "cactus", x: 92, y: 67, width: 6, height: 17, passed: false }
+  ];
+  const resumed = plugins.get("game-09")!({ seed: 57, playerIds: ["a"] }, JSON.stringify(state));
+  resumed.tick(frame(3000));
+  assert.equal(resumed.checkWin("a"), true);
+  assert.equal(resumed.getProgress().value, resumed.getProgress().target);
+});
 test("11 Game 24 validates exact arithmetic and consumes every operand once", () => {
   assert.equal(expressionEquals24("6÷(1−3÷4)", [6,1,3,4]), true);
   assert.equal(expressionEquals24("6/(1-3/4)+0", [6,1,3,4]), false);

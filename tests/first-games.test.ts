@@ -4,6 +4,7 @@ import { GAMES } from "../packages/shared/catalog";
 import type { Action, Board, Quiz } from "../packages/shared/protocol";
 import { Arena } from "../apps/server/src/arena";
 import { plugins } from "../local-games/registry";
+import { isPrime } from "../local-games/game-12";
 import { harness, send } from "./socket-helper";
 import { arithmetic, directions, move, shortest, solvePipes, solveSokoban } from "./solve";
 
@@ -110,5 +111,37 @@ test("in 2 vs 2 both teammates steer the same side and only that side advances",
     assert.ok(results.filter(row => blue.some(player => player.id === row.playerId)).every(row => row.outcome === "win"));
     assert.ok(results.filter(row => orange.some(player => player.id === row.playerId)).every(row => row.outcome === "lose"));
     assert.equal(results.length, 4);
+  } finally { await service.close(); }
+});
+
+test("a completed prime quiz records a tie and sends both phones results before the clock runs out", async () => {
+  const service = await harness();
+  try {
+    await service.host("HOST-12");
+    const a = await service.player("甲");
+    const b = await service.player("乙");
+    const lobby = await service.match([a,b]);
+    const started = await service.begin([a,b], lobby.stationId);
+    for (const player of [a,b]) {
+      for (let i = 0; i < 5; i++) {
+        const scene = service.panel(player.id).scene as Quiz;
+        const number = Number(scene.prompt!.text.match(/\d+/)![0]);
+        const prime = i < 3 ? isPrime(number) : !isPrime(number);
+        await service.control(player, { kind: "choice", questionId: scene.prompt!.id, index: prime ? 0 : 1 });
+      }
+    }
+    assert.ok(service.time() < started.deadline!);
+    const room = service.campus.hostView("HOST-12").room!;
+    assert.equal(room.status, "finished");
+    assert.equal(room.reason, "completed");
+    assert.equal(room.match?.winner, null);
+    const results = service.store.resultsForSession(lobby.id);
+    assert.deepEqual(results.map(result => [result.tied, result.awarded]), [[true, 1], [true, 1]]);
+    for (const player of [a,b]) {
+      const view = service.campus.playerView(player.id);
+      assert.equal(view.room, null);
+      assert.equal(view.route.completed, 1);
+      assert.equal(view.lastResult?.tied, true);
+    }
   } finally { await service.close(); }
 });

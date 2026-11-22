@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowCounterClockwise, CaretDoubleDown,
-  Check, Crosshair, Eraser, Flag, Lightning
+  Check, Crosshair, Eraser, Flag, Lightning, Trophy
 } from "@phosphor-icons/react";
 import { teamColors, type Controls } from "../shared/catalog";
-import type { Action, Direction, MatchPanel, Member, RemoteControls, RoomView, Scene } from "../shared/protocol";
+import type { Action, Direction, MatchEndReason, MatchPanel, Member, RemoteControls, RoomView, Scene, SideCompletion } from "../shared/protocol";
 import { sideLabels } from "../shared/route";
 import { fmtScore, ProgressBar, Status } from "./components";
 
@@ -20,6 +20,25 @@ const defaultTileNames: Record<string, string> = {
 
 export const optionLetters = ["A", "B", "C", "D"] as const;
 
+const endLabels: Record<MatchEndReason, string> = {
+  goal: "已達成任務", completed: "全部題目已作答", timeout: "60 秒已到"
+};
+const completionLabels: Record<SideCompletion, string> = {
+  cleared: "本方已達成任務", exhausted: "本方已完成題組"
+};
+
+export function RoundOutcome({ winner, reason, side }: {
+  winner: number | null; reason: MatchEndReason | null; side?: number;
+}) {
+  const won = winner !== null && (side === undefined || side === winner);
+  const title = winner === null ? "本場平手" : side === undefined ? sideLabels[winner] + "獲勝" : won ? "本場獲勝" : "本場落敗";
+  return <div className={"host-stage host-outcome round-outcome " + (won ? "won" : winner === null ? "" : "lost")} role="status" data-enter>
+    {won ? <Trophy size={64} weight="duotone"/> : <Flag size={58} weight="duotone"/>}
+    <strong>{title}</strong>
+    {reason && <p>{endLabels[reason]}</p>}
+  </div>;
+}
+
 type SideMember = Pick<Member, "id" | "name" | "position" | "side">;
 
 export function SideNames({ members, side }: { members: SideMember[]; side: number }) {
@@ -34,13 +53,13 @@ export function ArenaPanels({ panels, members }: { panels: MatchPanel[]; members
   return <div className="arena-panels" data-sides={panels.length} aria-label="即時對戰">
     {panels.map(panel => <section className="arena-panel" key={panel.side} data-side={panel.side}>
       <header><h2>{sideLabels[panel.side]}</h2><SideNames members={members} side={panel.side}/></header>
-      <div className="arena-board">{panel.scene && <SceneView scene={panel.scene} cursor={panel.cursor}/>}</div>
-      {panel.cleared ? <p className="arena-cleared">已達成任務</p> : panel.progress && <ProgressBar progress={panel.progress}/>}
+      <div className="arena-board">{panel.scene && <SceneView scene={panel.scene} cursor={panel.cursor} completion={panel.completion}/>}</div>
+      {panel.completion === "cleared" ? <p className="arena-cleared">已達成任務</p> : panel.progress && <ProgressBar progress={panel.progress}/>}
     </section>)}
   </div>;
 }
 
-export function SceneView({ scene, cursor }: { scene: Scene; cursor?: number | null }) {
+export function SceneView({ scene, cursor, completion }: { scene: Scene; cursor?: number | null; completion?: SideCompletion }) {
   if (scene.kind === "grid") return <div className="board" style={{ "--cols": scene.width, "--rows": scene.height } as CSSProperties} aria-label="遊戲棋盤">
     {scene.tiles.map((tile, index) => {
       const contents = <>
@@ -73,9 +92,9 @@ export function SceneView({ scene, cursor }: { scene: Scene; cursor?: number | n
     {scene.brickTotal !== undefined && <div className="bricks" aria-label={"剩餘 " + scene.bricks + " 塊磚"}>
       {Array.from({ length: scene.brickTotal }, (_, i) => <span className={i >= scene.bricks! ? "broken" : ""} key={i}/>)}
     </div>}
-    <div className="quiz-prompt">{scene.prompt?.text ?? "等待下一題"}</div>
-    {scene.prompt?.numbers && <div className="number-cards">{scene.prompt.numbers.map((num, i) => <span key={i}>{num}</span>)}</div>}
-    {scene.prompt?.options && <div className="arena-options">{scene.prompt.options.map((option, index) =>
+    <div className="quiz-prompt">{completion ? completionLabels[completion] : scene.prompt?.text ?? "等候題目"}</div>
+    {!completion && scene.prompt?.numbers && <div className="number-cards">{scene.prompt.numbers.map((num, i) => <span key={i}>{num}</span>)}</div>}
+    {!completion && scene.prompt?.options && <div className="arena-options">{scene.prompt.options.map((option, index) =>
       <div key={option.value}><b>{optionLetters[index]}</b><span>{option.label}</span></div>)}</div>}
     <div className="quiz-meta"><span>已答 <strong>{scene.attempted}</strong></span><span>答對 <strong>{scene.correct}</strong></span>
       {scene.feedback && <span className={scene.feedback === "correct" ? "good" : "bad"}>{scene.feedback === "correct" ? "答對" : "答錯"}</span>}
@@ -117,7 +136,7 @@ function ActionButton({ action, send, children, label, className = "", repeat = 
 function QuizControls({ remote, isExpression, send }: { remote: RemoteControls; isExpression: boolean; send: (action: Action) => void }) {
   const [value, setValue] = useState("");
   const questionId = remote.questionId;
-  if (questionId === undefined) return <p className="muted">本方已完成題組，等候本場結果。</p>;
+  if (questionId === undefined) return <p className="muted">等候題目。</p>;
   const submit = () => {
     if (!value.trim()) return;
     send({ kind: "answer", questionId, value: value.trim() });
@@ -164,6 +183,7 @@ export function GameControls({ remote, controls, gameId, send }: {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [controls]);
+  if (remote.completion) return <p className="notice" role="status">{completionLabels[remote.completion]}，等候本場結果。</p>;
   if (controls === "answer" || controls === "expression") {
     return <QuizControls key={remote.questionId ?? 0} remote={remote} isExpression={controls === "expression"} send={send}/>;
   }

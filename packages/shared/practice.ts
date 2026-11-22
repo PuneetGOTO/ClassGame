@@ -1,4 +1,4 @@
-import type { MatchPanel, RemoteControls } from "./protocol";
+import type { MatchEndReason, MatchPanel, RemoteControls } from "./protocol";
 
 export const practiceSeats = ["P1", "P2"] as const;
 export type PracticeSeat = typeof practiceSeats[number];
@@ -16,6 +16,7 @@ export interface PracticeView {
     startedAt: number;
     deadline: number;
     winner: number | null;
+    reason: MatchEndReason | null;
   } | null;
   panels?: MatchPanel[];
   entries?: { seat: PracticeSeat; url: string }[];

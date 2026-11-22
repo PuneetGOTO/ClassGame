@@ -32,7 +32,8 @@ export type Action = z.infer<typeof actionSchema>;
 export type Direction = z.infer<typeof directionSchema>;
 export type Ack<T = null> = { ok: true; data: T } | { ok: false; error: string; code: string };
 export type RoomStatus = "lobby" | "countdown" | "running" | "finished" | "cancelled";
-export type EndReason = "goal" | "timeout" | "stopped" | "forfeit" | "reset" | "lobby-expired" | "no-play" | "host-offline" | "error";
+export type MatchEndReason = "goal" | "completed" | "timeout";
+export type EndReason = MatchEndReason | "stopped" | "forfeit" | "reset" | "lobby-expired" | "no-play" | "host-offline" | "error";
 
 export interface Progress { value: number; target: number; label: string }
 export interface GridTile {
@@ -75,6 +76,7 @@ export interface Result {
   step: number | null;
   participated: boolean;
   outcome: "win" | "lose" | "absent";
+  tied: boolean;
   rawPoints: number;
   baseAwarded: number;
   awarded: number;
@@ -99,8 +101,11 @@ export interface Member {
   forfeited: boolean; progress?: Progress; tint: number;
   checkedIn: boolean; position: number; side: number | null;
 }
-export interface MatchPanel { side: number; scene: Scene | null; progress: Progress | null; cursor: number | null; cleared: boolean }
-export interface RemoteControls { questionId?: number; choices?: number }
+export type SideCompletion = "cleared" | "exhausted";
+export interface MatchPanel {
+  side: number; scene: Scene | null; progress: Progress | null; cursor: number | null; completion?: SideCompletion;
+}
+export interface RemoteControls { questionId?: number; choices?: number; completion?: SideCompletion }
 export interface MatchView {
   mode: MatchMode; arrivalDeadline: number; winner: number | null;
   panels?: MatchPanel[]; remote?: RemoteControls;

@@ -1,10 +1,11 @@
 import { gameById, type Controls } from "../../../packages/shared/catalog";
 import { neighbor, type Frame, type PluginFactory } from "../../../packages/game-sdk";
-import type { Action, MatchPanel, RemoteControls } from "../../../packages/shared/protocol";
+import type { Action, MatchEndReason, MatchPanel, RemoteControls, SideCompletion } from "../../../packages/shared/protocol";
 import type { Difficulty, MatchMode } from "../../../packages/shared/route";
 
 interface SideSnapshot { side: number; engine: string; cursor: number | null; wonAt: number | null }
-interface Side extends Omit<SideSnapshot, "engine"> { engine: ReturnType<PluginFactory> }
+interface Side extends Omit<SideSnapshot, "engine"> { engine: ReturnType<PluginFactory>; completion?: SideCompletion }
+export interface ArenaResult { winner: number | null; reason: MatchEndReason }
 const sideKey = (side: number) => "side-" + side;
 
 export const matchMode = (size: number): MatchMode => size === 4 ? "doubles" : size === 3 ? "free-for-all" : "duel";
@@ -21,6 +22,8 @@ export class Arena {
       const snapshot = snapshots.find(item => item.side === side);
       const engine = factory({ seed, tier, playerIds: [sideKey(side)] }, snapshot?.engine);
       const panel: Side = { side, engine, cursor: snapshot?.cursor ?? null, wonAt: snapshot?.wonAt ?? null };
+      if (panel.wonAt !== null) panel.completion = "cleared";
+      else if (snapshot && engine.isComplete()) panel.completion = "exhausted";
       if (!saved && ["cell", "traffic"].includes(this.controls)) {
         const scene = engine.getState(sideKey(side));
         if (scene.kind === "tubes") panel.cursor = 0;
@@ -33,6 +36,16 @@ export class Arena {
 
   start() {
     for (const side of this.sides.values()) side.engine.start();
+  }
+
+  private updateCompletion(side: Side, now: number) {
+    if (side.engine.checkWin(sideKey(side.side))) {
+      side.wonAt = now;
+      side.completion = "cleared";
+    } else if (side.engine.isComplete()) {
+      side.completion = "exhausted";
+    }
+    return side.completion !== undefined;
   }
 
   private moveCursor(side: Side, direction: Extract<Action, { kind: "cursor" }>["direction"]) {
@@ -62,10 +75,13 @@ export class Arena {
 
   input(sideIndex: number, action: Action, elapsed: number, now: number) {
     const side = this.sides.get(sideIndex);
-    if (!side || side.wonAt !== null) return { changed: false, played: false };
+    if (!side || side.completion) return { changed: false, played: false };
     const key = sideKey(sideIndex);
     const frame: Frame = { elapsed, activePlayers: [key] };
-    if (action.kind === "cursor") return { changed: this.moveCursor(side, action.direction), played: false };
+    if (action.kind === "cursor") {
+      const moved = this.moveCursor(side, action.direction);
+      return { changed: moved, played: moved };
+    }
     if (action.kind === "cell") return { changed: false, played: false };
 
     let input: Action = action;
@@ -91,20 +107,17 @@ export class Arena {
         if (index >= 0) side.cursor = index;
       }
     }
-    if (accepted && side.engine.checkWin(key)) side.wonAt = now;
+    if (accepted) this.updateCompletion(side, now);
     return { changed: accepted, played: accepted };
   }
 
   tick(elapsed: number, now: number, onlineSides: ReadonlySet<number>) {
     let changed = false;
     for (const side of this.sides.values()) {
-      if (!side.engine.timed || side.wonAt !== null) continue;
+      if (!side.engine.timed || side.completion) continue;
       const key = sideKey(side.side);
       if (side.engine.tick({ elapsed, activePlayers: onlineSides.has(side.side) ? [key] : [] })) changed = true;
-      if (side.engine.checkWin(key)) {
-        side.wonAt = now;
-        changed = true;
-      }
+      if (this.updateCompletion(side, now)) changed = true;
     }
     return changed;
   }
@@ -117,31 +130,31 @@ export class Arena {
       scene: sceneVisible ? side?.engine.getState(key) ?? null : null,
       progress: side?.engine.getProgress(key) ?? null,
       cursor: sceneVisible ? side?.cursor ?? null : null,
-      cleared: side?.wonAt != null
+      completion: side?.completion
     };
   }
 
   remote(side: number): RemoteControls {
     const panel = this.panel(side);
+    if (panel.completion) return { completion: panel.completion };
     const prompt = panel.scene?.kind === "quiz" ? panel.scene.prompt : undefined;
     return prompt ? { questionId: prompt.id, choices: prompt.options?.length } : {};
   }
 
-  completed(eligible: ReadonlySet<number>) {
+  result(eligible: ReadonlySet<number>, timeUp = false): ArenaResult | undefined {
     const completed = [...this.sides.values()].filter(side => eligible.has(side.side) && side.wonAt !== null);
     completed.sort((first, second) => first.wonAt! - second.wonAt!);
-    if (completed.length > 1 && completed[0].wonAt === completed[1].wonAt) return null;
-    return completed[0]?.side ?? null;
-  }
-
-  winner(eligible: ReadonlySet<number>) {
-    const cleared = this.completed(eligible);
-    if (cleared !== null) return cleared;
+    if (completed.length) {
+      const winner = completed[0].wonAt === completed[1]?.wonAt ? null : completed[0].side;
+      return { winner, reason: timeUp ? "timeout" : "goal" };
+    }
+    if (!timeUp && [...this.sides.values()].some(side => !side.completion)) return;
     const ranked = [...eligible].map(side => {
       const progress = this.panel(side, false).progress;
       return { side, ratio: progress ? progress.value / Math.max(1, progress.target) : 0 };
     }).sort((a, b) => b.ratio - a.ratio);
-    return ranked.length && (ranked.length === 1 || ranked[0].ratio > ranked[1].ratio) ? ranked[0].side : null;
+    const winner = ranked.length && (ranked.length === 1 || ranked[0].ratio > ranked[1].ratio) ? ranked[0].side : null;
+    return { winner, reason: timeUp ? "timeout" : "completed" };
   }
 
   finish() {
@@ -153,6 +166,7 @@ export class Arena {
   }
 
   serialize() {
-    return JSON.stringify([...this.sides.values()].map(({ engine, ...side }) => ({ ...side, engine: engine.serialize() })));
+    return JSON.stringify([...this.sides.values()].map(({ side, engine, cursor, wonAt }): SideSnapshot =>
+      ({ side, engine: engine.serialize(), cursor, wonAt })));
   }
 }
