@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GAMES, fixedId } from "../packages/shared/catalog";
+import { GAMES, STATION_COUNT, fixedId } from "../packages/shared/catalog";
 import { ROUTE_LENGTH, routeTier } from "../packages/shared/route";
 import { selectMatch, type Candidate } from "../apps/server/src/matchmaking";
 import { harness, ok, send } from "./socket-helper";
@@ -29,7 +29,7 @@ test("matchmaking leaves a pair for the next room and prioritizes compatible unp
 test("a lone player can finish ten different games with a completed volunteer, with no points awarded to the volunteer", async () => {
   const service = await harness();
   try {
-    await Promise.all(GAMES.map((_game, i) => service.host(fixedId("HOST", i + 1))));
+    await Promise.all(GAMES.slice(0, STATION_COUNT).map((_game, i) => service.host(fixedId("HOST", i + 1))));
     const a = await service.player("十關甲");
     const b = await service.player("十關乙");
     const c = await service.player("十關丙");

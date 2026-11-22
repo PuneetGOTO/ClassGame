@@ -17,7 +17,7 @@ const bothSides = new Set([0, 1]);
 
 export class Practice {
   private readonly peers = new Map<PracticeRole, CampusSocket>();
-  private gameId = "game-19";
+  private gameId = "game-21";
   private round?: Round;
   private codeDeadline = 0;
 

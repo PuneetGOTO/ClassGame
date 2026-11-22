@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { GAMES, fixedId } from "../packages/shared/catalog";
+import { GAMES, STATION_COUNT, fixedId } from "../packages/shared/catalog";
 import type { Leaderboard, RoomView } from "../packages/shared/protocol";
 import { harness, ok, send } from "./socket-helper";
 import { move } from "./solve";
@@ -27,7 +27,7 @@ test("50 phones and 20 hosts run 13 simultaneous multiplayer matches at real 60-
     let leaked = 0;
     observer.on("game:state", () => leaked++);
     await ok(observer, "campus:watch", null);
-    const hosts = await Promise.all(GAMES.map((_game, i) => service.host(fixedId("HOST", i + 1))));
+    const hosts = await Promise.all(GAMES.slice(0, STATION_COUNT).map((_game, i) => service.host(fixedId("HOST", i + 1))));
     const players = await Promise.all(Array.from({ length: 50 }, (_, i) =>
       service.player("負載 " + (i + 1), fixedId("TEAM", Math.floor(i / 5) + 1))));
     const initial = service.store.leaderboard();

@@ -17,7 +17,7 @@ const factory = (number: number, seed = 57, players = [ids[0]]) => {
 };
 
 test("all 20 personal games have seeded, restorable missions at four difficulty levels", () => {
-  assert.equal(plugins.size, 20);
+  assert.equal(plugins.size, GAMES.length);
   assert.ok(GAMES.every(game => game.mode === "solo"));
   for (const game of GAMES) {
     const create = plugins.get(game.id)!;

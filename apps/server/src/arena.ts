@@ -9,6 +9,12 @@ interface SideSnapshot {
   side: number; engine: string; cursor: number | null; wonAt: number | null; answerTimes?: [string, number][];
   answerStats?: [string, AnswerStats][];
 }
+interface SharedArenaSnapshot {
+  shared: true;
+  engine: string;
+  sideSlots: [number, string[]][];
+  playerSlot: [string, string][];
+}
 interface Side extends Omit<SideSnapshot, "engine" | "answerTimes" | "answerStats"> {
   engine: ReturnType<PluginFactory>; completion?: SideCompletion;
   answerTimes: Map<string, number>; answerStats: Map<string, AnswerStats>;
@@ -21,10 +27,33 @@ export const matchMode = (size: number): MatchMode => size === 4 ? "doubles" : s
 export class Arena {
   private readonly sides = new Map<number, Side>();
   private readonly controls: Controls;
+  private readonly shared: boolean;
+  private readonly sharedEngine?: ReturnType<PluginFactory>;
+  private readonly sideSlots = new Map<number, string[]>();
+  private readonly playerSlot = new Map<string, string>();
   readonly timed: boolean;
 
   constructor(factory: PluginFactory, gameId: string, seed: number, tier: Difficulty, sides: number[], saved?: string | null) {
-    this.controls = gameById.get(gameId)!.controls;
+    const info = gameById.get(gameId)!;
+    this.controls = info.controls;
+    this.shared = Boolean(info.sharedArena);
+    if (this.shared) {
+      const snapshot = saved ? JSON.parse(saved) as SharedArenaSnapshot : null;
+      if (snapshot?.shared) {
+        for (const [side, slots] of snapshot.sideSlots) this.sideSlots.set(side, slots);
+        for (const [playerId, slotId] of snapshot.playerSlot) this.playerSlot.set(playerId, slotId);
+      } else {
+        const counts = new Map<number, number>();
+        for (const side of sides) counts.set(side, (counts.get(side) ?? 0) + 1);
+        for (const [side, count] of counts) {
+          this.sideSlots.set(side, Array.from({ length: count }, (_, idx) => `${sideKey(side)}#${idx}`));
+        }
+      }
+      const allSlots = [...this.sideSlots.values()].flat();
+      this.sharedEngine = factory({ seed, tier, playerIds: allSlots }, snapshot?.engine);
+      this.timed = this.sharedEngine.timed;
+      return;
+    }
     const snapshots: SideSnapshot[] = saved ? JSON.parse(saved) : [];
     for (const side of new Set(sides)) {
       const snapshot = snapshots.find(item => item.side === side);
@@ -47,6 +76,10 @@ export class Arena {
   }
 
   start() {
+    if (this.sharedEngine) {
+      this.sharedEngine.start();
+      return;
+    }
     for (const side of this.sides.values()) side.engine.start();
   }
 
@@ -86,6 +119,20 @@ export class Arena {
   }
 
   input(sideIndex: number, playerId: string, action: Action, elapsed: number, now: number) {
+    if (this.sharedEngine) {
+      const slots = this.sideSlots.get(sideIndex);
+      if (!slots?.length || action.kind === "cursor" || action.kind === "cell" || action.kind === "choice" || action.kind === "answer") {
+        return { changed: false, played: false };
+      }
+      let slotId = this.playerSlot.get(playerId);
+      if (!slotId) {
+        const used = new Set(this.playerSlot.values());
+        slotId = slots.find(id => !used.has(id)) ?? slots[slots.length - 1];
+        this.playerSlot.set(playerId, slotId);
+      }
+      const accepted = this.sharedEngine.handleInput(slotId, action, { elapsed, activePlayers: [slotId] });
+      return { changed: accepted, played: accepted };
+    }
     const side = this.sides.get(sideIndex);
     if (!side || side.completion) return { changed: false, played: false };
     const key = sideKey(sideIndex);
@@ -137,6 +184,9 @@ export class Arena {
   }
 
   tick(elapsed: number, now: number, onlineSides: ReadonlySet<number>) {
+    if (this.sharedEngine) {
+      return this.sharedEngine.tick({ elapsed, activePlayers: [...onlineSides].map(sideKey) });
+    }
     let changed = false;
     for (const side of this.sides.values()) {
       if (!side.engine.timed || side.completion) continue;
@@ -148,6 +198,15 @@ export class Arena {
   }
 
   panel(sideIndex: number, sceneVisible = true): MatchPanel {
+    if (this.sharedEngine) {
+      const key = sideKey(sideIndex);
+      return {
+        side: sideIndex,
+        scene: sceneVisible ? this.sharedEngine.getState(key) : null,
+        progress: this.sharedEngine.getProgress(key),
+        cursor: null
+      };
+    }
     const side = this.sides.get(sideIndex);
     const key = sideKey(sideIndex);
     return {
@@ -160,6 +219,7 @@ export class Arena {
   }
 
   remote(sideIndex: number, playerId: string, clockOffset = 0): RemoteControls {
+    if (this.sharedEngine) return {};
     const panel = this.panel(sideIndex);
     if (panel.completion) return { completion: panel.completion };
     const prompt = panel.scene?.kind === "quiz" ? panel.scene.prompt : undefined;
@@ -170,6 +230,7 @@ export class Arena {
   }
 
   playerAnswers(sideIndex: number, playerId: string, shared: boolean) {
+    if (this.sharedEngine) return {};
     const side = this.sides.get(sideIndex);
     const scene = side?.engine.getState(sideKey(sideIndex));
     if (!side || scene?.kind !== "quiz") return {};
@@ -181,6 +242,15 @@ export class Arena {
   }
 
   result(eligible: ReadonlySet<number>, timeUp = false): ArenaResult | undefined {
+    if (this.sharedEngine) {
+      if (!timeUp) return;
+      const ranked = [...eligible].map(side => {
+        const progress = this.panel(side, false).progress;
+        return { side, score: progress?.value ?? 0 };
+      }).sort((a, b) => b.score - a.score);
+      const winner = ranked.length && (ranked.length === 1 || ranked[0].score > ranked[1].score) ? ranked[0].side : null;
+      return { winner, reason: "timeout" };
+    }
     const completed = [...this.sides.values()].filter(side => eligible.has(side.side) && side.wonAt !== null);
     completed.sort((first, second) => first.wonAt! - second.wonAt!);
     if (completed.length) {
@@ -197,14 +267,31 @@ export class Arena {
   }
 
   finish() {
+    if (this.sharedEngine) {
+      this.sharedEngine.finish();
+      return;
+    }
     for (const side of this.sides.values()) side.engine.finish();
   }
 
   destroy() {
+    if (this.sharedEngine) {
+      this.sharedEngine.destroy();
+      return;
+    }
     for (const side of this.sides.values()) side.engine.destroy();
   }
 
   serialize() {
+    if (this.sharedEngine) {
+      const snapshot: SharedArenaSnapshot = {
+        shared: true,
+        engine: this.sharedEngine.serialize(),
+        sideSlots: [...this.sideSlots],
+        playerSlot: [...this.playerSlot]
+      };
+      return JSON.stringify(snapshot);
+    }
     return JSON.stringify([...this.sides.values()].map(({ side, engine, cursor, wonAt, answerTimes, answerStats }): SideSnapshot => ({
       side, engine: engine.serialize(), cursor, wonAt,
       ...(answerTimes.size && { answerTimes: [...answerTimes] }),
