@@ -5,6 +5,7 @@ import { practiceNames, practiceSeats, type PracticeRole, type PracticeView } fr
 import type { Action, BombermanMode } from "../../../packages/shared/protocol";
 import { sideLabels } from "../../../packages/shared/route";
 import { Brand, ErrorText, RotatingQr, RoomClock, ScreenPauseNotice, Status } from "../../../packages/ui/components";
+import { KawaiiReindeer, KawaiiSnowman } from "../../../packages/ui/christmas-art";
 import { RotateGameNotice, useGameOrientation } from "../../../packages/ui/game-orientation";
 import { ArenaPanels, GameControls, RoundOutcome } from "../../../packages/ui/game-view";
 import { RemoteError, message, request, socket, type CampusConnection } from "../../../packages/ui/network";
@@ -24,6 +25,9 @@ export function Practice({ connection }: { connection: CampusConnection }) {
   const seq = useRef(0);
   const isController = role !== "screen";
   const { portrait, lockLandscape } = useGameOrientation(isController && view !== null);
+  const round = view?.round;
+  const playing = round?.status === "running" || round?.status === "countdown";
+  useEffect(() => { if (!isController && playing) window.scrollTo(0, 0); }, [isController, playing]);
 
   const update = useCallback((next: PracticeView) => {
     seq.current = active.current?.round?.id === next.round?.id ? Math.max(seq.current, next.seq) : next.seq;
@@ -125,10 +129,10 @@ export function Practice({ connection }: { connection: CampusConnection }) {
   </main>;
 
   const game = gameById.get(view.gameId)!;
-  const round = view.round;
-  const playing = round?.status === "running" || round?.status === "countdown";
   const screenLost = round?.status === "finished" && round.reason === "host-offline";
   const ready = view.screenOnline && practiceSeats.every(seat => view.seats[seat]);
+  const stop = <button type="button" className="button compact secondary" disabled={!online || busy}
+    onClick={() => void run(() => request("practice:stop", null))}>結束這局</button>;
   const controls = <div className="practice-controls">
     {!playing && <label className="field">選擇遊戲
       <select value={game.id} disabled={!online || busy} onChange={event => {
@@ -149,8 +153,7 @@ export function Practice({ connection }: { connection: CampusConnection }) {
     </label>}
     {!playing ? <button type="button" className="button primary" disabled={!ready || !online || busy || (isController && portrait)}
       onClick={() => void run(() => request("practice:start", null))}>{round ? "再玩一局" : "開始測試"}</button>
-      : <button type="button" className="button secondary" disabled={!online || busy}
-        onClick={() => void run(() => request("practice:stop", null))}>結束這局</button>}
+      : stop}
     {!ready && !playing && <p className="muted small">大螢幕和 P1、P2 都連線後即可開局。</p>}
   </div>;
   if (isController) {
@@ -177,11 +180,12 @@ export function Practice({ connection }: { connection: CampusConnection }) {
     </main>;
   }
 
-  return <main id="main" className="host-display shell practice-display">
+  return <main id="main" className="host-display shell practice-display" data-playing={playing}>
     <header className="host-top">
       <Brand/><div className="host-meta"><strong>測試大螢幕</strong><span>雙人練習</span></div>
       <div className="host-top-actions">
         <Status online={online} label={online ? "主機在線" : "正在重連"}/>
+        {playing && stop}
         <button className="icon-button" type="button" aria-label="切換全螢幕" onClick={() => {
           const action = document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
           void action.catch(() => setError("瀏覽器目前無法切換全螢幕"));
@@ -205,13 +209,14 @@ export function Practice({ connection }: { connection: CampusConnection }) {
           : round?.status === "finished" ? round.reason === "host-offline"
             ? <div className="host-stage idle"><h2>本局已取消</h2><p>大螢幕重連逾時。</p></div>
             : <RoundOutcome winner={round.winner} reason={round.reason} panels={view.panels}/>
-          : <div className="host-stage idle practice-idle"><GameController size={68} weight="duotone"/>
+          : <div className="host-stage idle practice-idle">
+            <div className="xmas-idle-mascots"><KawaiiSnowman size={74}/><KawaiiReindeer size={74}/></div>
             <h2>{ready ? "兩支手掣已連線" : "等待手機掃碼連線"}</h2><p>{game.objective}</p>
             {ready && <p>兩位玩家將手機轉成橫向後即可開局。</p>}
           </div>}
-        {controls}
+        {!playing && controls}
       </section>
-      <aside className="host-aside" aria-label="手機入場">
+      {!playing && <aside className="host-aside" aria-label="手機入場">
         {practiceSeats.map((seat, side) => {
           const entry = view.entries?.find(item => item.seat === seat);
           return <section className="panel host-join practice-seat" data-side={side} key={seat}>
@@ -225,7 +230,7 @@ export function Practice({ connection }: { connection: CampusConnection }) {
               </RotatingQr>)}
           </section>;
         })}
-      </aside>
+      </aside>}
     </div>
   </main>;
 }

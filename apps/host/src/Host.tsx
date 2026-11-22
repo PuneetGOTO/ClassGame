@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, ArrowsOut, FlagBanner, Monitor, QrCode, UsersThree } from "@phosphor-icons/react";
+import { ArrowRight, ArrowsOut, Monitor, QrCode, UsersThree } from "@phosphor-icons/react";
 import { fixedId, gameById, STATION_COUNT } from "../../../packages/shared/catalog";
 import { floorLabel } from "../../../packages/shared/floors";
 import { HOST_SCREEN_VERSION } from "../../../packages/shared/rules";
 import type { HostView, Result, RoomView, StationEntry, TeamResult } from "../../../packages/shared/protocol";
 import { modeTitle, sideLabels } from "../../../packages/shared/route";
 import { Brand, Countdown, DoubleBanner, ErrorText, fmtChange, HomeLink, RotatingQr, RoomClock, StationStatus, Status } from "../../../packages/ui/components";
+import { KawaiiReindeer, KawaiiSnowman } from "../../../packages/ui/christmas-art";
 import { ArenaPanels, Members, RoundOutcome, SideNames } from "../../../packages/ui/game-view";
 import { message, request, socket, type CampusConnection } from "../../../packages/ui/network";
 
@@ -21,6 +22,8 @@ export function Host({ connection }: { connection: CampusConnection }) {
   const [host, setHost] = useState<HostView | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const playing = host?.room?.status === "countdown" || host?.room?.status === "running";
+  useEffect(() => { if (playing) window.scrollTo(0, 0); }, [playing]);
   const connect = useCallback(async (hostId: string, password: string) => {
     if (!password) return;
     setBusy(true);
@@ -58,6 +61,11 @@ export function Host({ connection }: { connection: CampusConnection }) {
     };
   }, [id, connect]);
   if (!host) return <main id="main" className="narrow join-layout" data-enter><section className="panel join-panel">
+    <div className="xmas-login-mascots">
+      <KawaiiSnowman size={50}/>
+      <p>校園聖誕闖關</p>
+      <KawaiiReindeer size={50}/>
+    </div>
     <div className="feature-icon"><Monitor size={30} weight="duotone"/></div><p className="eyebrow">固定大螢幕</p>
     <h1>登記遊戲主機</h1><p className="muted">選擇此螢幕的主機編號，並輸入管理後台提供的專屬金鑰。</p>
     <form className="form-stack" onSubmit={event => { event.preventDefault(); if (!socket.connected && !socket.active) socket.connect(); else void connect(id, key); }}>
@@ -80,7 +88,7 @@ export function Host({ connection }: { connection: CampusConnection }) {
     socket.disconnect();
     location.assign("/host");
   };
-  return <main id="main" className="host-display shell">
+  return <main id="main" className="host-display shell" data-playing={playing}>
     <header className="host-top">
       <Brand/><div className="host-meta"><strong>{host.hostId}</strong><span>{floorLabel[station.floor]} · {station.name}</span></div>
       <div className="host-top-actions"><Status online={live} label={live ? "主機在線" : "正在重連"}/>
@@ -96,7 +104,7 @@ export function Host({ connection }: { connection: CampusConnection }) {
         <div className="host-title"><div><p className="eyebrow">{mode ?? game.english}</p><h1>{game.name}</h1></div>
           <div className="host-clock"><RoomClock room={live ? room : null} offset={offset}/><span>{room?.status === "countdown" ? "開始倒數" : "剩餘時間"}</span></div>
         </div>
-        {!live && room && (room.status === "running" || room.status === "countdown") &&
+        {!live && playing &&
           <p className="notice" role="status">大螢幕連線中斷，正在重連。</p>}
         {(room?.status === "running" || room?.status === "finished") && room.doubleChallenge &&
           <DoubleBanner challenge={room.doubleChallenge} team={false}/>}
@@ -105,12 +113,12 @@ export function Host({ connection }: { connection: CampusConnection }) {
             <SideRoster room={room}/></div>
           : room?.status === "finished" ? <RoundOutcome winner={room.match?.winner ?? null} panels={room.match?.panels}
             reason={room.reason === "goal" || room.reason === "completed" || room.reason === "timeout" ? room.reason : null}/>
-          : <div className="host-stage idle"><FlagBanner weight="duotone" size={68}/>
+          : <div className="host-stage idle"><div className="xmas-idle-mascots"><KawaiiSnowman size={74}/><KawaiiReindeer size={74}/></div>
             <h2>{room?.status === "lobby" ? "等候玩家掃碼及就緒" : "等待配對玩家"}</h2>
             {room?.match && <p>報到倒數 <Countdown end={room.match.arrivalDeadline} offset={offset}/></p>}
             <p>{game.objective}</p><StationStatus station={station}/></div>}
       </section>
-      <aside className="host-aside">
+      {!playing && <aside className="host-aside">
         <section className="panel host-join"><div className="section-line"><h2><QrCode size={21}/> 手機入場</h2></div>
           <RotatingQr entry={live && station.open ? host.entry : null} offset={offset}
             unavailable={!station.open ? "暫停入場" : !live ? "等待主機連線" : undefined}>
@@ -125,7 +133,7 @@ export function Host({ connection }: { connection: CampusConnection }) {
               : "未計分"}</strong></div>)}</div>
           : room ? <Members room={room}/> : <p className="muted">等待玩家加入場次</p>}
         </section>
-      </aside>
+      </aside>}
     </div>
   </main>;
 }

@@ -1,0 +1,752 @@
+/* 全站统一「软萌绘本 · 可爱卡哇伊雪国圣诞主题」 */
+:root {
+  color-scheme: light;
+  --bg: #eef7ff;
+  --surface: #fffdf9;
+  --raised: #fff5e8;
+  --line: #e9dac8;
+  --muted: #607284;
+  --ink: #273645;
+  --blue: #d9383a;
+  --blue-deep: #b82529;
+  --green: #1d7a52;
+  --orange: #d98218;
+  --red: #d9383a;
+  --r: 22px;
+
+  --xmas-snow: #fffdf9;
+  --xmas-cream: #fff7ec;
+  --xmas-ice: #e8f4fd;
+  --xmas-red: #d9383a;
+  --xmas-red-deep: #b32428;
+  --xmas-red-soft: #ffecef;
+  --xmas-green: #1d7a52;
+  --xmas-green-deep: #145c3d;
+  --xmas-green-soft: #e6f6ee;
+  --xmas-gold: #d4941d;
+  --xmas-gold-light: #fff3cf;
+  --xmas-cocoa: #5b4636;
+}
+
+body {
+  background: linear-gradient(180deg, #dcf0ff 0%, #f3f9ff 36%, #fff8ef 100%);
+  color: var(--ink);
+  min-height: 100svh;
+}
+
+/* 可爱吉祥物轻盈浮跃动画 */
+.kawaii-mascot {
+  display: inline-block;
+  flex-shrink: 0;
+  filter: drop-shadow(0 6px 10px rgba(91, 70, 54, 0.14));
+  animation: kawaii-bob 3.2s ease-in-out infinite;
+}
+
+@keyframes kawaii-bob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-4px) rotate(1.5deg); }
+}
+
+/* 顶部导航栏：雪白毛玻璃 + 糖果质感 */
+.topbar {
+  position: relative;
+  z-index: 20;
+  background: rgba(255, 253, 249, 0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 2px solid #f0dfd0;
+  box-shadow: 0 6px 24px rgba(154, 108, 69, 0.08);
+}
+
+.topbar::after {
+  content: "";
+  display: block;
+  height: 5px;
+  background: repeating-linear-gradient(
+    -45deg,
+    #e03e41 0 14px,
+    #fffdf9 14px 24px,
+    #1d7a52 24px 38px,
+    #fffdf9 38px 48px
+  );
+  opacity: 0.85;
+}
+
+.brand {
+  position: relative;
+  color: var(--ink);
+}
+
+.brand-mark {
+  position: relative;
+  background: linear-gradient(135deg, #e24346, #b91c1c);
+  color: #fffdf7;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(217, 56, 58, 0.28);
+}
+
+.brand-hat {
+  position: absolute;
+  top: -11px;
+  left: -7px;
+  transform: rotate(-16deg);
+  pointer-events: none;
+}
+
+.brand-accent {
+  color: var(--xmas-red);
+}
+
+.nav-shell nav a {
+  color: #526476;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 650;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.nav-shell nav a:hover {
+  background: #fff0e5;
+  color: var(--xmas-red-deep);
+  transform: translateY(-1px);
+}
+
+.nav-shell nav a[aria-current="page"] {
+  background: linear-gradient(135deg, #e03e41, #c1272d);
+  color: #ffffff;
+  box-shadow: 0 5px 14px rgba(217, 56, 58, 0.25);
+}
+
+/* 通用状态点 */
+.status { color: #5b6d80; font-weight: 650; }
+.status-ready { color: var(--xmas-green); }
+.status-ready i { background: var(--xmas-green); box-shadow: 0 0 8px rgba(29, 122, 82, 0.45); }
+.status-active { color: #c76f0c; }
+.status-active i { background: #f59e0b; box-shadow: 0 0 8px rgba(245, 158, 11, 0.45); }
+
+/* 软萌雪顶奶油卡片 */
+.panel {
+  position: relative;
+  z-index: 4;
+  background: linear-gradient(180deg, #ffffff 0%, #fffaf2 100%);
+  border: 2px solid #ecd9c4;
+  border-radius: 22px;
+  box-shadow: 0 12px 28px rgba(133, 94, 62, 0.09), 0 3px 0 #f1dfc9;
+}
+
+/* 糖果质感立体按钮系统 */
+.button, .icon-button, .control {
+  border-radius: 14px;
+  font-weight: 700;
+}
+
+.primary {
+  background: linear-gradient(180deg, #ea4b4e, #cf2b2f);
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  box-shadow: 0 4px 0 #a31c20, 0 8px 18px rgba(217, 56, 58, 0.24);
+}
+
+.primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f25a5d, #d93438);
+}
+
+.primary:active:not(:disabled) {
+  box-shadow: 0 1px 0 #a31c20;
+}
+
+.secondary, .icon-button, .control {
+  background: linear-gradient(180deg, #ffffff, #fff4e6);
+  border: 2px solid #e4cfb6;
+  color: #314354;
+  box-shadow: 0 3px 0 #e6d0b6;
+}
+
+.secondary:hover:not(:disabled), .icon-button:hover:not(:disabled), .control:hover:not(:disabled) {
+  background: linear-gradient(180deg, #fffdf9, #ffe9d2);
+  border-color: #d98218;
+  color: #24323f;
+}
+
+.danger {
+  background: linear-gradient(180deg, #f45c7a, #cf2c4f);
+  border: 2px solid #ffd4dd;
+  color: #ffffff;
+  box-shadow: 0 4px 0 #9f1b38;
+}
+
+.control-primary {
+  background: linear-gradient(180deg, #279968, #1b7850);
+  border-color: #ffffff;
+  color: #ffffff;
+  box-shadow: 0 4px 0 #125437;
+}
+
+.control-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #2fb179, #208a5d);
+  border-color: #ffffff;
+  color: #ffffff;
+}
+
+.eyebrow {
+  color: var(--xmas-red);
+  font-weight: 800;
+}
+
+.row-icon, .feature-icon {
+  background: linear-gradient(135deg, #ffecef, #fff4d6);
+  border: 2px solid #f2c8c7;
+  color: var(--xmas-red);
+  border-radius: 16px;
+}
+
+.tone-adventure { background: #e6f6ee; color: #1d7a52; border-color: #a9dfc5; }
+.tone-math { background: #fff3d6; color: #b97509; border-color: #f3cf85; }
+
+/* 输入框、下拉框与弹窗 */
+input, select, textarea {
+  background: #ffffff;
+  border: 2px solid #e2ceb7;
+  border-radius: 12px;
+  color: var(--ink);
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--xmas-green);
+}
+
+input::placeholder { color: #8c9cac; }
+
+dialog {
+  background: linear-gradient(180deg, #ffffff 0%, #fffaf2 100%);
+  color: var(--ink);
+  border: 2.5px solid #e8d2ba;
+  border-radius: 24px;
+  box-shadow: 0 24px 60px rgba(91, 70, 54, 0.24);
+}
+
+dialog::backdrop {
+  background: rgba(45, 65, 86, 0.42);
+  backdrop-filter: blur(5px);
+}
+
+/* 提示条与成功提示 */
+.notice {
+  background: #fff6db;
+  border: 2px solid #ecc66d;
+  color: #7c4d08;
+  border-radius: 14px;
+  font-weight: 600;
+}
+
+.notice.error {
+  background: #ffeff1;
+  border-color: #f0a8b0;
+  color: #a81e2b;
+}
+
+.success {
+  background: #e8f8ef;
+  border-color: #7ecba7;
+  color: #146340;
+}
+
+.empty-mark {
+  background: linear-gradient(135deg, #ffecef, #fff3cf);
+  border: 2px solid #f0c9c6;
+  color: var(--xmas-red);
+  border-radius: 16px;
+}
+
+/* 通用表格与标签（管理后台 + 排行榜保持高对比清爽） */
+table { color: var(--ink); }
+thead { background: #fbf1e4; color: #674e3b; border-bottom: 2px solid #ead8c4; }
+tbody tr:not(:last-child) { border-bottom: 1px solid #f0e3d4; }
+tbody tr:hover { background: #fff4e8; }
+
+.team-tag {
+  background: color-mix(in srgb, var(--team-color) 18%, #ffffff);
+  border: 1.5px solid color-mix(in srgb, var(--team-color) 52%, #d8cbb8);
+  color: #24323f;
+  font-weight: 750;
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.team-tag i {
+  width: 8px;
+  height: 8px;
+  box-shadow: 0 0 0 1.5px rgba(36, 50, 63, 0.16);
+}
+
+.category-filters button, .segmented button {
+  color: #5b6d80;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.category-filters button[aria-pressed="true"], .segmented button[aria-pressed="true"] {
+  background: linear-gradient(135deg, #e03e41, #c4272c);
+  border-color: transparent;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(217, 56, 58, 0.24);
+}
+
+.site-footer {
+  position: relative;
+  z-index: 5;
+  border-top: 2px dashed #e6d3be;
+  color: #6b7c8d;
+}
+
+.site-footer .brand { color: var(--ink); }
+
+/* ================= 校园圣诞寻宝地图 (/) ================= */
+.xmas-map-banner {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  width: min(100%, 920px);
+  padding: 14px 20px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #ffffff 0%, #fff9ef 60%, #edf7ff 100%);
+  border: 2px solid #ecd9c4;
+  box-shadow: 0 10px 26px rgba(133, 94, 62, 0.09);
+}
+
+.xmas-map-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.xmas-map-banner h1 {
+  font-size: clamp(1.25rem, 2.2vw, 1.65rem);
+  font-weight: 850;
+  color: var(--ink);
+  margin: 0;
+}
+
+.xmas-map-banner p {
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.xmas-map-legend {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.xmas-map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1.5px solid #e7d5c0;
+  color: #46586b;
+}
+
+.xmas-map-legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.floor-chooser button {
+  background: #ffffff;
+  border: 2px solid #e5d2bc;
+  border-radius: 14px;
+  color: #46586b;
+  font-weight: 750;
+  box-shadow: 0 3px 0 #e6d4bf;
+}
+
+.floor-chooser button[aria-pressed="true"] {
+  background: linear-gradient(135deg, #1d7a52, #259464);
+  border-color: #ffffff;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(29, 122, 82, 0.28);
+}
+
+.floor-chooser button[aria-pressed="true"] small {
+  color: #d9f7e8;
+}
+
+.floor-canvas {
+  position: relative;
+  z-index: 4;
+  border: 4px solid #ffffff;
+  border-radius: 24px;
+  background: #fffdf9;
+  box-shadow: 0 18px 42px rgba(122, 92, 66, 0.14), 0 0 0 2px #e6d4bf;
+}
+
+.map-marker {
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  background: linear-gradient(180deg, #8aa0b5, #6c8299);
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(45, 65, 86, 0.25);
+  font-weight: 800;
+}
+
+.map-marker.ready {
+  background: linear-gradient(180deg, #2ea873, #1d7a52);
+  border-color: #ffffff;
+  color: #ffffff;
+}
+
+.map-marker.busy {
+  background: linear-gradient(180deg, #fb923c, #d97706);
+  border-color: #ffffff;
+  color: #ffffff;
+}
+
+.map-marker:hover, .map-marker:focus-visible, .map-marker.selected {
+  background: linear-gradient(180deg, #ef4444, #c81e1e);
+  border-color: #fff3cf;
+  color: #ffffff;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.26), 0 6px 14px rgba(185, 28, 28, 0.3);
+}
+
+.map-marker[data-destination="true"] {
+  outline: 3px solid #f59e0b;
+  outline-offset: 3px;
+}
+
+/* ================= 手机控制器 & 游戏手柄奶油圣诞外框 ================= */
+.controller-id {
+  background: linear-gradient(135deg, #ffffff, #fff6ea);
+  border: 2px solid #ebd7c0;
+  border-radius: 18px;
+  box-shadow: 0 6px 16px rgba(133, 94, 62, 0.09);
+}
+
+.controller-score {
+  color: var(--xmas-red-deep);
+  font-weight: 850;
+}
+
+.route-track i { background: #eadccf; height: 7px; border-radius: 999px; }
+.route-track [data-current="true"] i { background: #f8c6c7; }
+.route-track i[data-done="true"] { background: linear-gradient(90deg, #1d7a52, #31a874); }
+
+.route-rules > span {
+  background: #fff4e4;
+  border: 1.5px solid #ead4b8;
+  color: #5c4636;
+  border-radius: 999px;
+  font-weight: 650;
+}
+
+.remote-player {
+  background: linear-gradient(90deg, #fffaf2, #ffffff);
+  border: 2px solid var(--side-line, #e6d3be);
+  border-radius: 14px;
+}
+
+.remote-player strong { color: var(--side-ink, var(--xmas-red)); font-weight: 850; }
+.remote-player span { color: var(--muted); }
+
+[data-side="0"] { --side-ink: #0e74b8; --side-line: #7cc4f5; }
+[data-side="1"] { --side-ink: #c95812; --side-line: #f5b37c; }
+[data-side="2"] { --side-ink: #177a52; --side-line: #7ed9b1; }
+[data-side="3"] { --side-ink: #7e33b8; --side-line: #c9a2f2; }
+
+.play-clock {
+  background: #fff3cf;
+  border: 2px solid #e6b84c;
+  color: #b82529;
+  border-radius: 14px;
+}
+
+.clock-low { color: #d9383a; }
+
+.member, .history-list > div {
+  background: #fff8ef;
+  border: 1.5px solid #eee0d0;
+  border-radius: 12px;
+}
+
+.member-avatar {
+  background: color-mix(in srgb, var(--piece-color, var(--xmas-red)) 26%, #ffffff);
+  color: #24323f;
+  font-weight: 850;
+  border: 1.5px solid color-mix(in srgb, var(--piece-color, var(--xmas-red)) 55%, #d8cbb8);
+}
+
+.rotate-game-notice {
+  background: #fff6e6;
+  border: 2px solid #ebc999;
+  border-radius: 16px;
+}
+
+.double-banner {
+  background: linear-gradient(90deg, #fff2c6, #ffe7dc);
+  border: 2px solid #e6a938;
+  color: #7a4208;
+  border-radius: 16px;
+}
+
+.double-symbol { background: #f59e0b; color: #ffffff; }
+.double-banner p { color: #8c5315; }
+.double-banner b { color: #c82328; }
+
+.qr-placeholder {
+  background: #fffaf3;
+  border: 2px dashed #dec5aa;
+  color: var(--muted);
+  border-radius: 16px;
+}
+
+.qr-link {
+  border: 3px solid #e9d2ba;
+  border-radius: 16px;
+  box-shadow: 0 8px 20px rgba(133, 94, 62, 0.12);
+}
+
+/* 统一手柄外框为奶油圣诞红绿立体手感（适配最新统一触控摇杆与动作键） */
+.direction-stick {
+  background: radial-gradient(circle at center, #ffffff, #fff2e2);
+  border: 3px solid #1d7a52;
+  color: #1d7a52;
+  box-shadow: 0 5px 0 #145c3d, inset 0 0 18px rgba(29, 122, 82, 0.1);
+}
+
+.direction-stick[data-dragging="true"] {
+  border-color: #d9383a;
+}
+
+.direction-stick-thumb {
+  background: linear-gradient(180deg, #32a874, #1d7a52);
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 4px 12px rgba(20, 92, 61, 0.35);
+}
+
+.handset-action {
+  background: linear-gradient(180deg, #ea4b4e, #c82328);
+  border: 3px solid #ffffff;
+  color: #ffffff;
+  box-shadow: 0 5px 0 #97181c;
+}
+
+.handset-action:active, .handset-action[data-active="true"] {
+  background: #b82025;
+  box-shadow: 0 2px 0 #97181c;
+}
+
+.volleyball-jump {
+  background: linear-gradient(180deg, #ea4b4e, #c82328);
+  border: 3px solid #ffffff;
+  color: #ffffff;
+  box-shadow: 0 5px 0 #97181c;
+}
+
+.volleyball-jump:active, .volleyball-jump[data-active="true"] {
+  background: #b82025;
+}
+
+.airhockey-stick {
+  background: radial-gradient(circle at center, #ffffff 0%, #fff3e4 74%, #f8e3cc 100%);
+  border: 3px solid #d9383a;
+  box-shadow: inset 0 0 20px rgba(217, 56, 58, 0.1), 0 8px 20px rgba(133, 94, 62, 0.18);
+}
+
+.airhockey-stick-thumb {
+  background: radial-gradient(circle at 35% 30%, #ff8a8c 0%, #d9383a 60%, #991b1b 100%);
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 4px 14px rgba(217, 56, 58, 0.4);
+}
+
+.bomberman-bomb-btn {
+  border: 3px solid #ffffff;
+  box-shadow: 0 6px 0 #9f1239;
+}
+
+.xmas-login-mascots {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fff5eb, #edf7ff);
+  border: 1.5px solid #ebd7c0;
+}
+
+.xmas-login-mascots p {
+  font-size: 0.85rem;
+  color: #5b4636;
+  font-weight: 700;
+}
+
+/* ================= 站位大屏 (/host) & 测试房 (/practice) ================= */
+.host-stage, .host-scene {
+  background: linear-gradient(180deg, #fffdf9 0%, #f1f8ff 100%);
+  border: 2px dashed #dcc8b2;
+  border-radius: 20px;
+}
+
+.host-stage h2 { color: var(--ink); font-weight: 850; }
+.host-stage p { color: var(--muted); }
+.host-clock .clock { color: var(--xmas-red); }
+.host-meta strong { color: var(--xmas-red); }
+
+.round-outcome {
+  background: radial-gradient(ellipse at 50% 45%, #fff9e6, #fff2e6 74%);
+  border: 2px solid #ebd1a7;
+}
+
+.round-outcome.won {
+  background: radial-gradient(ellipse at 50% 45%, #e8faef, #fff9ea 74%);
+  border-color: #7ccca5;
+}
+
+.round-outcome.lost {
+  background: radial-gradient(ellipse at 50% 45%, #ffeff2, #fff7ee 74%);
+  border-color: #f0b4be;
+}
+
+.arena-panel {
+  background: #fffdf9;
+  border: 2px solid var(--side-line);
+  border-top-width: 5px;
+  border-radius: 18px;
+}
+
+.arena-options > div { background: #fff5e8; border: 1.5px solid #ead6be; }
+.quiz { background: #fffdf9; border: 2px solid #e6d3be; border-radius: 18px; }
+.number-cards span { background: #fff2d9; border: 2px solid #eac278; color: #5c3b09; }
+
+.xmas-idle-mascots {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+/* ================= 圣诞老人控制工坊 (/admin) ================= */
+.admin-station {
+  background: #fffdf9;
+  border: 1.5px solid #ecdcc8;
+  border-radius: 12px;
+}
+
+.admin-station:hover, .admin-station[aria-pressed="true"] {
+  background: #ffeff0;
+  border-color: #e06a6c;
+}
+
+.admin-station-num {
+  background: #ffecef;
+  color: var(--xmas-red-deep);
+  font-weight: 800;
+}
+
+.admin-rosters > div {
+  background: #fff9f0;
+  border: 1.5px solid #eddcc9;
+  border-radius: 12px;
+}
+
+.coordinate-map {
+  background: #f4f9ff;
+  border: 2px solid #e5d2bc;
+  border-radius: 14px;
+}
+
+.location-field {
+  background: #fffaf3;
+  border: 2px solid #ebd9c5;
+  border-radius: 16px;
+}
+
+.issued-code { color: var(--xmas-red-deep); }
+
+/* ================= 柔和飘雪与彩灯 ================= */
+.xmas-snowfall {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.xmas-flake {
+  position: absolute;
+  top: -24px;
+  left: var(--flake-x);
+  width: var(--flake-size);
+  height: var(--flake-size);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, rgba(255, 255, 255, 0.88) 55%, rgba(206, 232, 255, 0.38) 100%);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.9);
+  opacity: var(--flake-alpha);
+  animation: xmas-fall var(--flake-dur) linear infinite;
+  animation-delay: var(--flake-delay);
+}
+
+.xmas-flake.star {
+  background: radial-gradient(circle, #ffe49c 0%, #f5b942 60%, transparent 100%);
+  box-shadow: 0 0 10px rgba(245, 185, 66, 0.65);
+}
+
+@keyframes xmas-fall {
+  0% { transform: translate3d(0, -10px, 0) rotate(0deg); }
+  50% { transform: translate3d(var(--flake-drift), 52vh, 0) rotate(180deg); }
+  100% { transform: translate3d(calc(var(--flake-drift) * -0.4), 108vh, 0) rotate(360deg); }
+}
+
+.xmas-garland {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  height: 44px;
+  margin-bottom: -14px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.xmas-bulb {
+  animation: xmas-twinkle 2.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.xmas-bulb:nth-child(even) { animation-delay: 1.3s; }
+.xmas-bulb:nth-child(3n) { animation-delay: 0.65s; }
+
+@keyframes xmas-twinkle {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 6px currentColor); }
+  50% { opacity: 0.6; filter: drop-shadow(0 0 2px currentColor); }
+}
+
+.xmas-snowhills {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  height: 54px;
+  margin-top: 24px;
+  display: block;
+}
+
+/* 保留游戏内暗色霓虹/和风 HUD 内部文字可读性 */
+.volleyball-hud, .airhockey-hud, .bomberman-hud {
+  color: #edf5fb;
+}
+.volleyball-names, .airhockey-names, .bomberman-side-meta {
+  color: #edf5fb;
+}
+.volleyball-hud .volleyball-score, .airhockey-hud .airhockey-score {
+  color: #7dd3fc;
+}
+.volleyball-hud [data-side="1"] .volleyball-score, .airhockey-hud [data-side="1"] .airhockey-score {
+  color: #ffc183;
+}
