@@ -206,8 +206,10 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
     socket.on("practice:leave", (body, ack) => accept(z.null(), body, ack, () => practice.leave(socket)));
     socket.on("practice:release", (body, ack) => accept(z.object({ seat: z.enum(["P1", "P2"]) }),
       body, ack, data => practice.release(socket, data.seat)));
-    socket.on("practice:select", (body, ack) => accept(z.object({ gameId: z.string().max(32) }),
-      body, ack, data => practice.select(socket, data.gameId)));
+    socket.on("practice:select", (body, ack) => accept(z.object({
+      gameId: z.string().max(32),
+      bombermanMode: z.enum(["2v2", "1v1v1v1"]).optional()
+    }), body, ack, data => practice.select(socket, data.gameId, data.bombermanMode)));
     socket.on("practice:start", (body, ack) => accept(z.null(), body, ack, () => practice.start(socket)));
     socket.on("practice:stop", (body, ack) => accept(z.null(), body, ack, () => practice.stop(socket)));
     socket.on("practice:input", (body, ack) => accept(inputSchema, body, ack, data => practice.input(socket, data)));

@@ -16,9 +16,9 @@ const factory = (number: number, seed = 57, players = [ids[0]]) => {
   return plugins.get(id)!({ playerIds: players, seed });
 };
 
-test("all 20 active games have seeded, restorable states at four difficulty levels", () => {
-  assert.equal(plugins.size, 20);
-  assert.equal(GAMES.length, 20);
+test("all active games have seeded, restorable states at four difficulty levels", () => {
+  assert.equal(plugins.size, GAMES.length);
+  assert.ok(GAMES.length >= 20);
   assert.ok(GAMES.every(game => game.mode === "solo"));
   for (const game of GAMES) {
     const create = plugins.get(game.id)!;

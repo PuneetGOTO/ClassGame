@@ -17,7 +17,8 @@ interface Side extends Omit<SideSnapshot, "engine" | "answerTimes" | "answerStat
 export interface ArenaResult { winner: number | null; reason: MatchEndReason }
 const sideKey = (side: number) => "side-" + side;
 
-export const matchMode = (size: number): MatchMode => size === 4 ? "doubles" : size === 3 ? "free-for-all" : "duel";
+export const matchMode = (size: number, sideCount?: number): MatchMode =>
+  size === 4 && sideCount === 4 ? "ffa4" : size === 4 ? "doubles" : size === 3 ? "free-for-all" : "duel";
 
 export class Arena {
   private readonly sides = new Map<number, Side>();
@@ -229,6 +230,13 @@ export class Arena {
 
   result(eligible: ReadonlySet<number>, timeUp = false): ArenaResult | undefined {
     if (this.sharedEngine) {
+      const winners = [...eligible].filter(side => this.sharedEngine!.checkWin(sideKey(side)));
+      if (winners.length) {
+        return { winner: winners.length === 1 ? winners[0] : null, reason: timeUp ? "timeout" : "goal" };
+      }
+      if (this.sharedEngine.isComplete()) {
+        return { winner: null, reason: timeUp ? "timeout" : "goal" };
+      }
       if (!timeUp) return;
       const ranked = [...eligible].map(side => {
         const progress = this.panel(side, false).progress;

@@ -260,7 +260,7 @@ test("all 20 practice games start, accept two handsets, display their inputs, an
         const panel = before.panels![side];
         for (const [index, action] of firstMoves(panel).entries()) {
           await ok(client, "practice:input", { sessionId: started.round!.id, seq: index + 1, action });
-          if (game.controls === "runner" || game.controls === "volleyball") service.step(80);
+          if (game.controls === "runner" || game.controls === "volleyball" || game.controls === "bomberman") service.step(80);
           const visible = (await display()).panels?.[side];
           if (JSON.stringify(panel) !== JSON.stringify(visible)) break;
         }
@@ -285,6 +285,7 @@ function firstMoves(panel: MatchPanel): Action[] {
   if (panel.cursor !== null) return ["right", "left", "down", "up"].map(direction =>
     ({ kind: "cursor", direction }) as Action);
   if (scene.kind === "volleyball") return [{ kind: "action", action: "hold-right" }, { kind: "action", action: "jump" }];
+  if (scene.kind === "bomberman") return [{ kind: "action", action: "bomb" }, { kind: "action", action: "hold-down" }];
   if (scene.kind === "arcade" && scene.theme !== "road") {
     return [{ kind: "action", action: scene.theme === "space" ? "shoot" : "jump" }];
   }

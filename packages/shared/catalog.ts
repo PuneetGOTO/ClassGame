@@ -8,10 +8,11 @@ export const LOBBY_MS = 90_000;
 export const SCORE_SCALE = TEAM_SIZE;
 export const NUMBER_HUNT_ID = "game-19";
 export const VOLLEYBALL_ID = "game-21";
+export const BOMBERMAN_ID = "game-23";
 
 export type Category = "puzzle" | "adventure" | "math";
 export type Mode = "solo" | "co-op" | "team-quiz";
-export type Controls = "directions" | "cell" | "traffic" | "flight" | "runner" | "quest" | "answer" | "expression" | "volleyball";
+export type Controls = "directions" | "cell" | "traffic" | "flight" | "runner" | "quest" | "answer" | "expression" | "volleyball" | "bomberman";
 
 export interface GameInfo {
   id: string;
@@ -22,6 +23,10 @@ export interface GameInfo {
   controls: Controls;
   objective: string;
   sharedArena?: boolean;
+  /** 最低開局人數（預設 2；四人專用遊戲設為 4，取消 1v1） */
+  minPlayers?: number;
+  /** 四人對局分組模式：doubles (2v2)、ffa4 (1v1v1v1)、doubles-or-ffa4 (依局次輪換) */
+  fourPlayerMode?: "doubles" | "ffa4" | "doubles-or-ffa4";
 }
 
 const entries = [
@@ -52,8 +57,21 @@ const catalog: GameInfo[] = entries.map(([name, english, category, mode, control
   id: `game-${String(i + 1).padStart(2, "0")}`, name, english, category, mode, controls, objective,
   ...(controls === "volleyball" ? { sharedArena: true } : {})
 }));
+const bomberman: GameInfo = {
+  id: BOMBERMAN_ID,
+  name: "霓虹炸彈人",
+  english: "Neon Bomberman",
+  category: "adventure",
+  mode: "solo",
+  controls: "bomberman",
+  objective: "四人同場競技（2v2 隊友不互傷 或 1v1v1v1 四人混戰），放炸彈炸磚搶道具淘汰對手，第 35 秒螺旋落牆縮圈，60 秒內決出勝負。",
+  sharedArena: true,
+  minPlayers: 4,
+  fourPlayerMode: "doubles-or-ffa4"
+};
+catalog.push(bomberman);
 const volleyball = catalog.find(game => game.id === VOLLEYBALL_ID)!;
-export const GAMES = catalog.slice(0, STATION_COUNT).map(game => game.id === NUMBER_HUNT_ID ? volleyball : game);
+export const GAMES = catalog.slice(0, STATION_COUNT).map(game => game.id === NUMBER_HUNT_ID ? volleyball : game).concat(bomberman);
 export const categoryLabel: Record<Category, string> = { puzzle: "解謎", adventure: "冒險", math: "數學" };
 export const modeLabel: Record<Mode, string> = { solo: "單人", "co-op": "隊伍合作", "team-quiz": "隊伍答題" };
 // Keep retired names resolvable in results and audits.

@@ -183,6 +183,7 @@ input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: var(--blue
 [data-side="0"] { --side-ink: #81cfff; --side-line: #2c719c; }
 [data-side="1"] { --side-ink: #ffc183; --side-line: #9a6031; }
 [data-side="2"] { --side-ink: #89e9bc; --side-line: #39795f; }
+[data-side="3"] { --side-ink: #d8b4fe; --side-line: #7e22ce; }
 .remote-panel { gap: 16px; }
 .remote-player { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
   padding: 10px 12px; background: #142232; border: 1px solid var(--side-line,var(--line)); border-radius: 8px; }
@@ -260,14 +261,62 @@ input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: var(--blue
   .volleyball-controls { margin-top: auto; }
 }
 @media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
-  .controller:has(.volleyball-controls) { padding-block: 8px max(8px, env(safe-area-inset-bottom)); gap: 8px; }
-  .remote-panel:has(.volleyball-controls) { grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); align-items: center; gap: 8px; padding: 12px; }
-  .remote-panel:has(.volleyball-controls) > :not(.play-heading, .remote-player) { grid-column: 1 / -1; }
-  .remote-panel:has(.volleyball-controls) .play-heading h1 { font-size: 1.375rem; line-height: 1.75rem; }
-  .remote-panel:has(.volleyball-controls) .play-clock { font-size: 1.125rem; padding: 4px 6px; }
-  .volleyball-controls { padding-block: 4px 24px; }
+  .controller:has(.volleyball-controls),.controller:has(.bomberman-controls) { padding-block: 8px max(8px, env(safe-area-inset-bottom)); gap: 8px; }
+  .remote-panel:has(.volleyball-controls),.remote-panel:has(.bomberman-controls) { grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); align-items: center; gap: 8px; padding: 12px; }
+  .remote-panel:has(.volleyball-controls) > :not(.play-heading, .remote-player),.remote-panel:has(.bomberman-controls) > :not(.play-heading, .remote-player) { grid-column: 1 / -1; }
+  .remote-panel:has(.volleyball-controls) .play-heading h1,.remote-panel:has(.bomberman-controls) .play-heading h1 { font-size: 1.375rem; line-height: 1.75rem; }
+  .remote-panel:has(.volleyball-controls) .play-clock,.remote-panel:has(.bomberman-controls) .play-clock { font-size: 1.125rem; padding: 4px 6px; }
+  .volleyball-controls,.bomberman-controls { padding-block: 4px 20px; }
   .volleyball-stick { inline-size: 102px; }
   .volleyball-jump { inline-size: 88px; }
+  .bomberman-dpad { inline-size: 148px; }
+  .bomberman-bomb-btn { inline-size: 104px; }
+}
+.bomberman-stage { display: grid; gap: 10px; width: 100%; justify-items: center; }
+.bomberman-hud { width: 100%; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 12px; background: rgba(9, 15, 36, 0.88); border: 1px solid rgba(56, 189, 248, 0.28); }
+.bomberman-mode-badge { display: grid; gap: 3px; }
+.bomberman-mode-badge strong { font-size: .95rem; color: #f8fafc; }
+.bomberman-shrink-alert { font-size: .8rem; font-weight: 700; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.bomberman-shrink-alert.active { color: #fb7185; text-shadow: 0 0 10px rgba(244, 63, 94, 0.65); }
+.bomberman-sides { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.bomberman-side-chip { display: grid; gap: 2px; padding: 5px 10px; border-radius: 8px;
+  background: rgba(15, 23, 42, 0.82); border: 1px solid var(--side-line); text-align: center; }
+.bomberman-side-chip.eliminated { opacity: 0.45; }
+.bomberman-side-name { font-size: .82rem; font-weight: 800; color: var(--side-ink); }
+.bomberman-side-meta { font-size: .78rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+.bomberman-mute { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(15, 23, 42, 0.9); color: var(--ink);
+  font-size: .82rem; font-weight: 600; cursor: pointer; }
+.bomberman-canvas { width: min(100%, calc(72vh * 13 / 11)); aspect-ratio: 13 / 11; display: block; border-radius: 14px;
+  border: 1px solid rgba(56, 189, 248, 0.35); box-shadow: 0 18px 44px rgba(0, 0, 0, 0.52); background: #090f24; }
+.bomberman-controls { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 8px 24px; }
+.bomberman-dpad,.bomberman-bomb-btn { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.bomberman-dpad { inline-size: clamp(160px, 44vw, 196px); aspect-ratio: 1; display: grid;
+  grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 6px; padding: 8px;
+  border-radius: 26px; background: radial-gradient(circle at center, #14223b, #0b1426);
+  border: 1px solid rgba(56, 189, 248, 0.38); box-shadow: inset 0 0 24px rgba(56, 189, 248, 0.12); }
+.bomberman-key { display: grid; place-items: center; border-radius: 14px; background: #162844;
+  border: 1px solid rgba(125, 211, 252, 0.28); color: #cbd5e1; transition: background .08s, transform .08s, box-shadow .08s; }
+.bomberman-key[data-active="true"] { background: #0284c7; color: #fff; border-color: #bae6fd;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.65); transform: scale(0.95); }
+.bomberman-key-up { grid-column: 2; grid-row: 1; }
+.bomberman-key-left { grid-column: 1; grid-row: 2; }
+.bomberman-key-center { grid-column: 2; grid-row: 2; border-radius: 50%; background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.3); margin: 10px; }
+.bomberman-key-right { grid-column: 3; grid-row: 2; }
+.bomberman-key-down { grid-column: 2; grid-row: 3; }
+.bomberman-bomb-btn { inline-size: clamp(106px, 31vw, 134px); aspect-ratio: 1; border-radius: 50%;
+  display: grid; place-content: center; justify-items: center; gap: 4px; padding: 0;
+  border: 2px solid #fda4af; color: #fff; font-weight: 800; font-size: 1rem;
+  background: radial-gradient(circle at 35% 30%, #fb7185, #e11d48 62%, #881337);
+  box-shadow: 0 0 26px rgba(244, 63, 94, 0.45); transition: transform .08s, box-shadow .08s; }
+.bomberman-bomb-btn:active,.bomberman-bomb-btn[data-active="true"] { transform: scale(0.93);
+  box-shadow: 0 0 36px rgba(251, 113, 133, 0.85); }
+@media (pointer: coarse) and (max-width: 640px) and (orientation: portrait) {
+  #root:has(.bomberman-controls) { min-height: 100svh; display: flex; flex-direction: column; }
+  .controller:has(.bomberman-controls),.remote-panel:has(.bomberman-controls) { display: flex; flex: 1; flex-direction: column; }
+  .bomberman-controls { margin-top: auto; }
 }
 .host-side-roster { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
 .host-side-roster > div { display: grid; gap: 5px; padding: 10px 14px; border: 1px solid var(--side-line); border-radius: 8px; }

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowsOut, GameController, Monitor, QrCode } from "@phosphor-icons/react";
-import { GAMES, categoryLabel, gameById, type Category } from "../../../packages/shared/catalog";
+import { BOMBERMAN_ID, GAMES, categoryLabel, gameById, type Category } from "../../../packages/shared/catalog";
 import { practiceNames, practiceSeats, type PracticeRole, type PracticeView } from "../../../packages/shared/practice";
-import type { Action } from "../../../packages/shared/protocol";
+import type { Action, BombermanMode } from "../../../packages/shared/protocol";
 import { sideLabels } from "../../../packages/shared/route";
 import { Brand, ErrorText, RotatingQr, RoomClock, ScreenPauseNotice, Status } from "../../../packages/ui/components";
 import { ArenaPanels, GameControls, RoundOutcome } from "../../../packages/ui/game-view";
@@ -134,6 +134,15 @@ export function Practice({ connection }: { connection: CampusConnection }) {
       }}>{Object.entries(categoryLabel).map(([category, label]) => <optgroup label={label} key={category}>
         {GAMES.filter(item => item.category === category as Category).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
       </optgroup>)}</select>
+    </label>}
+    {!playing && game.id === BOMBERMAN_ID && <label className="field">對戰模式（+2 AI 補位四角）
+      <select value={view.bombermanMode ?? "2v2"} disabled={!online || busy} onChange={event => {
+        const bombermanMode = event.target.value as BombermanMode;
+        void run(() => request("practice:select", { gameId: BOMBERMAN_ID, bombermanMode }));
+      }}>
+        <option value="2v2">2v2 團隊戰（隊友不互傷）</option>
+        <option value="1v1v1v1">1v1v1v1 四人混戰</option>
+      </select>
     </label>}
     {!playing ? <button type="button" className="button primary" disabled={!ready || !online || busy}
       onClick={() => void run(() => request("practice:start", null))}>{round ? "再玩一局" : "開始測試"}</button>

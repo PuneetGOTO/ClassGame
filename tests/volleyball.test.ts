@@ -4,7 +4,7 @@ import { Arena } from "../apps/server/src/arena";
 import { hostKey } from "../apps/server/src/config";
 import { selectMatch, type Candidate } from "../apps/server/src/matchmaking";
 import { plugins } from "../local-games/registry";
-import { GAME_MS, NUMBER_HUNT_ID, VOLLEYBALL_ID } from "../packages/shared/catalog";
+import { GAME_MS, GAMES, NUMBER_HUNT_ID, VOLLEYBALL_ID } from "../packages/shared/catalog";
 import type { Result, RoomView, VolleyballScene } from "../packages/shared/protocol";
 import { MATCH_WAIT_MS } from "../packages/shared/rules";
 import { credentials, harness, send } from "./socket-helper";
@@ -84,7 +84,7 @@ test("2v2 slime volleyball assigns 4 distinct slimes and emits timeout + score:r
     assert.ok(!upgradeRequired.ok && upgradeRequired.code === "host-refresh");
     oldScreen.disconnect();
     await service.host("HOST-19");
-    assert.equal(service.campus.snapshot().games.length, 20);
+    assert.equal(service.campus.snapshot().games.length, GAMES.length);
     assert.ok(!service.campus.snapshot().games.some(game => game.id === NUMBER_HUNT_ID));
     assert.equal(service.campus.hostView("HOST-19").station.gameId, VOLLEYBALL_ID);
     const players = await Promise.all(Array.from({ length: 4 }, (_, i) => service.player("排球手 " + (i + 1))));
