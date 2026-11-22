@@ -275,7 +275,7 @@ try {
     assert.match(studentCode, /^\d{8}$/);
     await credentialsDialog.getByRole("button", { name: "關閉", exact: true }).click();
     await dashboard.getByLabel("搜尋玩家").fill("00123");
-    assert.equal(await dashboard.getByRole("row").filter({ hasText: "00123" }).count(), 1);
+    await dashboard.getByRole("row").filter({ hasText: "00123" }).waitFor();
     assert.equal(await dashboard.getByRole("row").filter({ hasText: "00124" }).count(), 0);
     await dashboard.getByRole("button", { name: "關閉暱稱登記" }).click();
     await dashboard.getByRole("button", { name: "開放暱稱登記" }).waitFor();
