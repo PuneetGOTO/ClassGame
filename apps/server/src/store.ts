@@ -6,7 +6,9 @@ import {
   fixedId, GAMES, PLAYER_LIMIT, SCORE_SCALE, STATION_COUNT, TEAM_COUNT, TEAM_SIZE
 } from "../../../packages/shared/catalog";
 import { FLOORS, originalFloorStations, planPosition, type Floor } from "../../../packages/shared/floors";
-import type { AdminState, EndReason, Leaderboard, PlayerIdentity, PlayerRank, Result, RoomStatus, StationView, TeamRank, TeamResult } from "../../../packages/shared/protocol";
+import type {
+  AdminState, CompetitionSummary, EndReason, Leaderboard, PlayerIdentity, PlayerRank, Result, RoomStatus, StationView, TeamRank, TeamResult
+} from "../../../packages/shared/protocol";
 import { migrations } from "./migrations";
 
 export class RequestError extends Error {
@@ -15,8 +17,10 @@ export class RequestError extends Error {
 
 export interface PlayerRow {
   player_id: string; player_name: string; team_id: string; connected: number; total_score: number;
-  token_hash: string | null;
+  token_hash: string | null; student_no: string | null; access_hash: string | null; suspended: number;
 }
+interface StudentAccount { studentNumber: string; digest: string }
+interface NewStudent extends StudentAccount { name: string; teamId?: string }
 export interface SessionRow {
   session_id: string; competition_id: number; game_id: string; station_id: string; host_id: string;
   team_id: string | null; round_no: number; created_at: number; started_at: number | null;
@@ -63,6 +67,7 @@ const asResult = (row: ResultRow): Result => ({
 });
 const hash = (token: string) => createHash("sha256").update(token).digest("hex");
 const nameKey = (name: string) => name.normalize("NFKC").toLocaleLowerCase("zh-Hant").trim();
+const studentKey = (number: string) => "\x01" + number;
 
 export class Store {
   readonly db: DatabaseSync;
@@ -146,43 +151,97 @@ export class Store {
   }
 
   player(id: string) { return this.get<PlayerRow>("SELECT * FROM players WHERE player_id=?", id); }
-  playerFromToken(token: string) { return this.get<PlayerRow>("SELECT * FROM players WHERE token_hash=?", hash(token)); }
+  playerFromToken(token: string) { return this.get<PlayerRow>("SELECT * FROM players WHERE token_hash=? AND suspended=0", hash(token)); }
+  playerFromStudentNumber(number: string) { return this.get<PlayerRow>("SELECT * FROM players WHERE student_no=?", number); }
   players() { return this.all<PlayerRow>("SELECT * FROM players ORDER BY created_at, player_id"); }
   publicPlayer(player: PlayerRow): PlayerIdentity {
     return { id: player.player_id, name: player.player_name, teamId: player.team_id, connected: Boolean(player.connected), totalScore: player.total_score };
   }
 
   addPlayer(name: string, selectedTeam: string | undefined, now: number) {
-    return this.transaction(() => {
-      if (this.get<{ total: number }>("SELECT COUNT(*) AS total FROM players")!.total >= PLAYER_LIMIT) {
-        throw new RequestError("50 個正式名額已滿", "full", 409);
+    const token = randomBytes(32).toString("base64url");
+    const id = this.transaction(() => this.insertPlayer(name, selectedTeam, now, hash(token)));
+    return { id, token };
+  }
+
+  addStudents(students: readonly NewStudent[], now: number) {
+    return this.transaction(() => students.map((student, index) => {
+      try {
+        const id = this.insertPlayer(student.name, student.teamId, now, null, student);
+        this.audit("player.create", id, now);
+        return id;
+      } catch (error) {
+        if (error instanceof RequestError && students.length > 1) {
+          throw new RequestError("第 " + (index + 1) + " 筆 · " + error.message, error.code, error.status);
+        }
+        throw error;
       }
-      if (this.get("SELECT player_id FROM players WHERE name_key=?", nameKey(name))) {
-        throw new RequestError("此玩家名稱已登記，請用原手機或向管理員取得連結", "name-taken", 409);
-      }
-      const team = selectedTeam
-        ? this.get<TeamRow>("SELECT * FROM teams WHERE team_id=? AND member_count < ?", selectedTeam, TEAM_SIZE)
-        : this.get<TeamRow>("SELECT * FROM teams WHERE member_count < ? ORDER BY team_id LIMIT 1", TEAM_SIZE);
-      if (!team) throw new RequestError("該隊已滿，請選擇其他隊伍", "team-full", 409);
-      const id = randomUUID();
-      const token = randomBytes(32).toString("base64url");
-      this.run("INSERT INTO players(player_id,player_name,name_key,team_id,token_hash,created_at) VALUES (?,?,?,?,?,?)",
-        id, name, nameKey(name), team.team_id, hash(token), now);
-      return { id, token };
-    });
+    }));
+  }
+
+  private insertPlayer(name: string, selectedTeam: string | undefined, now: number, tokenHash: string | null, student?: StudentAccount) {
+    if (this.get<{ total: number }>("SELECT COUNT(*) AS total FROM players")!.total >= PLAYER_LIMIT) {
+      throw new RequestError("50 個正式名額已滿", "full", 409);
+    }
+    const key = student ? studentKey(student.studentNumber) : nameKey(name);
+    this.checkIdentity(key, student);
+    const team = selectedTeam
+      ? this.get<TeamRow>("SELECT * FROM teams WHERE team_id=? AND member_count < ?", selectedTeam, TEAM_SIZE)
+      : this.get<TeamRow>("SELECT * FROM teams WHERE member_count < ? ORDER BY team_id LIMIT 1", TEAM_SIZE);
+    if (!team) throw new RequestError("該隊已滿，請選擇其他隊伍", "team-full", 409);
+    const id = randomUUID();
+    this.run(`INSERT INTO players(player_id,player_name,name_key,team_id,token_hash,created_at,student_no,access_hash)
+      VALUES (?,?,?,?,?,?,?,?)`, id, name, key, team.team_id, tokenHash, now, student?.studentNumber ?? null, student?.digest ?? null);
+    return id;
+  }
+
+  private checkIdentity(key: string, student?: Pick<StudentAccount, "studentNumber">, id?: string) {
+    const existing = student ? this.playerFromStudentNumber(student.studentNumber)
+      : this.get<PlayerRow>("SELECT * FROM players WHERE name_key=?", key);
+    if (existing && existing.player_id !== id) {
+      if (student) throw new RequestError("這個學號已綁定其他玩家", "student-number-taken", 409);
+      throw new RequestError("此玩家名稱已登記，請用原手機或向管理員取得連結", "name-taken", 409);
+    }
   }
 
   rotateToken(id: string) {
-    if (!this.player(id)) throw new RequestError("找不到玩家", "not-found", 404);
+    const player = this.player(id);
+    if (!player) throw new RequestError("找不到玩家", "not-found", 404);
+    if (player.suspended) throw new RequestError("此帳號已停用", "account-suspended", 409);
     const token = randomBytes(32).toString("base64url");
     this.run("UPDATE players SET token_hash=? WHERE player_id=?", hash(token), id);
     return token;
   }
 
-  renamePlayer(id: string, name: string) {
-    const existing = this.get<PlayerRow>("SELECT * FROM players WHERE name_key=?", nameKey(name));
-    if (existing && existing.player_id !== id) throw new RequestError("此玩家名稱已登記", "name-taken", 409);
-    this.run("UPDATE players SET player_name=?, name_key=? WHERE player_id=?", name, nameKey(name), id);
+  updatePlayerIdentity(id: string, name: string | undefined, student: StudentAccount | undefined, now: number) {
+    return this.transaction(() => {
+      const player = this.player(id);
+      if (!player) throw new RequestError("找不到玩家", "not-found", 404);
+      const chosenName = name ?? player.player_name;
+      const number = student?.studentNumber ?? player.student_no;
+      const key = number ? studentKey(number) : nameKey(chosenName);
+      this.checkIdentity(key, number ? { studentNumber: number } : undefined, id);
+      if (student) {
+        this.run("UPDATE players SET player_name=?,name_key=?,student_no=?,access_hash=?,token_hash=NULL WHERE player_id=?",
+          chosenName, key, number, student.digest, id);
+        this.audit(player.student_no === number ? "player.code" : "player.identity", id, now);
+      } else if (chosenName !== player.player_name) {
+        this.run("UPDATE players SET player_name=?,name_key=? WHERE player_id=?", chosenName, key, id);
+        this.audit("player.rename", id, now);
+      }
+      return chosenName;
+    });
+  }
+
+  setPlayerSuspended(id: string, suspended: boolean, now: number) {
+    return this.transaction(() => {
+      const player = this.player(id);
+      if (!player) throw new RequestError("找不到玩家", "not-found", 404);
+      if (Boolean(player.suspended) === suspended) return false;
+      this.run("UPDATE players SET suspended=?,token_hash=NULL WHERE player_id=?", Number(suspended), id);
+      this.audit(suspended ? "player.suspend" : "player.reactivate", id, now);
+      return true;
+    });
   }
 
   setTeam(id: string, teamId: string, swapId?: string) {
@@ -256,6 +315,13 @@ export class Store {
   doubleChance() {
     return this.get<{ double_chance: number }>("SELECT double_chance FROM settings")!.double_chance;
   }
+  selfRegistration() {
+    return this.get<{ self_registration: number }>("SELECT self_registration FROM settings")!.self_registration === 1;
+  }
+  competitions() {
+    return this.all<CompetitionSummary>(`SELECT id,created_at AS openedAt,closed_at AS closedAt,reset_reason AS resetReason
+      FROM competitions ORDER BY id DESC`);
+  }
   officialFor(playerId: string, competitionId = this.competitionId) {
     return this.all<ResultRow>(`SELECT ${resultFields} FROM official_results o JOIN game_results r USING(result_id)
       JOIN game_sessions gs ON gs.session_id=r.session_id JOIN players p ON p.player_id=r.player_id WHERE o.competition_id=? AND o.player_id=?
@@ -282,20 +348,31 @@ export class Store {
     const next = records.length > limit ? records[limit - 1].cursor : null;
     return { sessions: records.slice(0, limit).map(({ cursor: _, ...record }) => record), next };
   }
-  leaderboard(): Leaderboard {
+  leaderboard(competitionId = this.competitionId): Leaderboard {
     const order = (a: { completed: number; wins: number; duration: number }, b: typeof a) =>
       b.completed - a.completed || b.wins - a.wins || a.duration - b.duration;
-    const players = this.all<SQLRank>(`SELECT p.player_id AS id,p.player_name AS name,p.team_id AS teamId,
-      t.team_name AS teamName,p.connected,p.total_score AS totalScore,
+    const roster = competitionId === this.competitionId ? `SELECT player_id,player_name,team_id,created_at,connected FROM players` : `
+      SELECT player_id,player_name,team_id,joined_at AS created_at,0 AS connected FROM competition_rosters WHERE competition_id=?
+      UNION ALL
+      SELECT p.player_id,p.player_name,r.team_id,p.created_at,0 AS connected
+      FROM players p JOIN game_results r ON r.result_id=(
+        SELECT result_id FROM game_results WHERE player_id=p.player_id AND competition_id=? AND participated=1 ORDER BY result_id DESC LIMIT 1
+      )
+      WHERE NOT EXISTS (SELECT 1 FROM competition_rosters WHERE competition_id=?)`;
+    const params = competitionId === this.competitionId ? [competitionId] : Array(4).fill(competitionId);
+    const players = this.all<SQLRank>(`WITH roster AS (${roster})
+      SELECT p.player_id AS id,p.player_name AS name,p.team_id AS teamId,
+      t.team_name AS teamName,p.connected,
+      COALESCE(SUM((r.awarded_units+r.adjustment_units)*r.score_weight),0) / ${SCORE_SCALE}.0 AS totalScore,
       COUNT(r.result_id) AS completed,COALESCE(SUM(r.win_or_lose='win'),0) AS wins,
       COALESCE(SUM(r.tied),0) AS ties,COALESCE(SUM(r.win_or_lose='lose' AND r.tied=0),0) AS losses,
       COALESCE(SUM(r.duration),0) AS duration,
       SUM(CASE WHEN gs.team_id IS NULL THEN COALESCE((r.awarded_units+r.adjustment_units)*r.score_weight,0) ELSE 0 END) AS soloUnits,
       SUM(CASE WHEN gs.team_id IS NOT NULL THEN (r.awarded_units+r.adjustment_units)*r.score_weight ELSE 0 END) AS multiUnits
-      FROM players p JOIN teams t USING(team_id)
+      FROM roster p JOIN teams t USING(team_id)
       LEFT JOIN official_results o ON o.player_id=p.player_id AND o.competition_id=?
       LEFT JOIN game_results r USING(result_id) LEFT JOIN game_sessions gs ON gs.session_id=r.session_id
-      GROUP BY p.player_id ORDER BY p.created_at,p.player_id`, this.competitionId)
+      GROUP BY p.player_id ORDER BY p.created_at,p.player_id`, ...params)
       .sort((a,b) => b.totalScore - a.totalScore || order(a,b))
       .map(({ soloUnits, multiUnits, ...player }, index): PlayerRank => ({
         ...player, rank: index + 1, connected: Boolean(player.connected), soloScore: soloUnits / SCORE_SCALE, multiScore: multiUnits / SCORE_SCALE
@@ -351,16 +428,18 @@ export class Store {
       return { voidedAt: now, players: competitionId === this.competitionId ? players : [] };
     });
   }
-  resetCompetition(now: number, action = "competition.reset") {
+  resetCompetition(now: number, action = "competition.reset", reason: string | null = null) {
     this.competitionId = this.transaction(() => {
-      this.run("UPDATE competitions SET closed_at=? WHERE id=?", now, this.competitionId);
+      this.run("UPDATE competitions SET closed_at=?,reset_reason=? WHERE id=?", now, reason, this.competitionId);
+      this.run(`INSERT INTO competition_rosters(competition_id,player_id,player_name,team_id,joined_at)
+        SELECT ?,player_id,player_name,team_id,created_at FROM players`, this.competitionId);
       this.run(`UPDATE game_sessions SET status='cancelled',reason='reset',ended_at=? WHERE competition_id=?
         AND status IN ('lobby','countdown','running')`, now, this.competitionId);
       this.run("DELETE FROM station_queue");
       this.run("DELETE FROM match_search");
       this.run("UPDATE players SET score_units=0");
       const next = this.createCompetition(now);
-      this.audit(action, this.competitionId + " → " + next, now);
+      this.audit(action, this.competitionId + " → " + next + (reason ? " · " + reason : ""), now);
       return next;
     });
   }

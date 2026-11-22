@@ -107,6 +107,7 @@ try {
   await players[0].page.getByRole("alert").getByText(/QR Code 已過期/).waitFor();
   await Promise.all(players.map(async ({ name, page }) => {
     await page.goto(origin + "/controller");
+    await page.getByRole("button", { name: "暱稱登記", exact: true }).click();
     await page.getByLabel("玩家名稱").fill(name);
     await page.getByRole("button", { name: "加入活動" }).click();
     await page.getByRole("heading", { name: "準備下一關" }).waitFor();
@@ -263,6 +264,35 @@ try {
     await dashboard.getByRole("heading", { name: "管理後台", exact: true }).waitFor();
     await dashboard.getByRole("button", { name: "玩家與隊伍" }).click();
     await dashboard.getByRole("rowheader", { name: "瀏覽器玩家", exact: true }).waitFor();
+    await dashboard.getByRole("button", { name: "批量新增", exact: true }).click();
+    const importDialog = dashboard.getByRole("dialog");
+    await importDialog.getByLabel("學生名單").fill("00123\t林同學\n00124,陳同學");
+    await importDialog.getByRole("button", { name: "匯入名單並產生登入碼" }).click();
+    const credentialsDialog = dashboard.getByRole("dialog").filter({ hasText: "學生登入資料" });
+    await credentialsDialog.getByRole("rowheader", { name: "林同學", exact: true }).waitFor();
+    const studentCode = await credentialsDialog.getByRole("row").filter({ hasText: "林同學" }).locator(".issued-code").innerText();
+    assert.match(studentCode, /^\d{8}$/);
+    await credentialsDialog.getByRole("button", { name: "關閉", exact: true }).click();
+    await dashboard.getByLabel("搜尋玩家").fill("00123");
+    assert.equal(await dashboard.getByRole("row").filter({ hasText: "00123" }).count(), 1);
+    assert.equal(await dashboard.getByRole("row").filter({ hasText: "00124" }).count(), 0);
+    await dashboard.getByRole("button", { name: "關閉暱稱登記" }).click();
+    await dashboard.getByRole("button", { name: "開放暱稱登記" }).waitFor();
+    const studentPhone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    track(studentPhone);
+    await studentPhone.goto(origin + "/controller");
+    await studentPhone.getByLabel("學生證號碼").waitFor();
+    const loginButton = studentPhone.getByRole("button", { name: "登入活動", exact: true });
+    assert.equal(await studentPhone.getByRole("button", { name: "暱稱登記", exact: true }).count(), 0);
+    assert.equal(await studentPhone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    if (process.env.CAMPUS_SCREENSHOTS) await studentPhone.screenshot({ path: "test-results/student-login.png", animations: "disabled" });
+    await studentPhone.getByLabel("學生證號碼").fill("00123");
+    await studentPhone.getByLabel("登入碼").fill(studentCode);
+    await loginButton.click();
+    await studentPhone.getByText("林同學", { exact: true }).waitFor();
+    assert.equal(await studentPhone.getByText("00123", { exact: true }).count(), 0);
+    await studentPhone.reload();
+    await studentPhone.getByText("林同學", { exact: true }).waitFor();
     await dashboard.getByRole("button", { name: "場次紀錄" }).click();
     await dashboard.getByRole("button", { name: "查看結算" }).first().click();
     await dashboard.getByRole("dialog").getByRole("rowheader", { name: "瀏覽器玩家", exact: true }).waitFor();
@@ -279,6 +309,29 @@ try {
     await dashboard.getByRole("button", { name: "匯出 CSV" }).click();
     const download = await downloadPromise;
     assert.equal(download.suggestedFilename(), "campus-scores.csv");
+    await dashboard.getByRole("button", { name: "排行榜管理" }).click();
+    const oldEdition = await dashboard.getByLabel("比賽屆別").locator("option").first().innerText();
+    const oldId = oldEdition.match(/\d+/)[0];
+    const reset = dashboard.getByRole("button", { name: "重置第 " + oldId + " 屆", exact: true });
+    await reset.click();
+    const resetDialog = dashboard.getByRole("dialog");
+    assert.equal(await resetDialog.getByRole("button", { name: "確認重置排行榜" }).isDisabled(), true);
+    await resetDialog.getByLabel("重置原因").fill("瀏覽器封存測試");
+    await resetDialog.getByLabel("輸入 RESET 確認").fill("RESET");
+    await resetDialog.getByRole("button", { name: "確認重置排行榜" }).click();
+    await dashboard.getByText("已封存舊屆並開啟新一屆", { exact: true }).waitFor();
+    await dashboard.getByLabel("比賽屆別").selectOption(oldId);
+    await dashboard.getByText("封存原因 · 瀏覽器封存測試", { exact: true }).waitFor();
+    await dashboard.getByRole("rowheader", { name: "林同學", exact: true }).waitFor();
+    const archiveDownload = dashboard.waitForEvent("download");
+    await dashboard.getByRole("button", { name: "匯出個人 CSV", exact: true }).click();
+    assert.equal((await archiveDownload).suggestedFilename(), "campus-scores-edition-" + oldId + ".csv");
+    if (process.env.CAMPUS_SCREENSHOTS) {
+      await dashboard.screenshot({ path: "test-results/admin-leaderboard-editions.png", animations: "disabled" });
+      await dashboard.setViewportSize({ width: 390, height: 844 });
+      assert.equal(await dashboard.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await dashboard.setViewportSize({ width: 1440, height: 900 });
+    }
     await dashboard.getByRole("button", { name: "規則與稽核" }).click();
     await dashboard.getByLabel(/每場觸發機率/).fill("20");
     await dashboard.getByRole("button", { name: "儲存遊戲規則" }).click();
@@ -390,7 +443,7 @@ try {
       await practiceScreen.screenshot({ path: "test-results/practice-fraction-result.png", animations: "disabled" });
       await practicePhones[1].screenshot({ path: "test-results/practice-win-controller.png", animations: "disabled" });
     }
-    assert.equal((await (await fetch(origin + "/api/campus")).json()).leaderboard.players.length, 4);
+    assert.equal((await (await fetch(origin + "/api/campus")).json()).leaderboard.players.length, 6);
   }
   assert.deepEqual(consoleErrors, []);
   console.log("Browser smoke passed: both floors, QR rotation, wrong-room rejection, 2 vs 2 with four mobile remotes, split-screen questions, reconnect, weighted result and rankings."

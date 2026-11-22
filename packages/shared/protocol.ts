@@ -13,6 +13,9 @@ export const stationQrSchema = z.string().regex(/^\d{1,16}\.[A-Za-z0-9_-]{32}$/)
 export const floorSchema = z.union([z.literal(3), z.literal(4)]);
 export const sessionIdSchema = z.uuid();
 export const registrationSchema = z.object({ name: nameSchema, teamId: teamIdSchema.optional() });
+export const studentNumberSchema = z.string().max(64).transform(value => value.normalize("NFKC").trim().toUpperCase())
+  .pipe(z.string().regex(/^[A-Z0-9][A-Z0-9._-]{1,23}$/, "請輸入 2 至 24 個英數字、點、底線或連字號"));
+export const studentLoginSchema = z.object({ studentNumber: studentNumberSchema, code: z.string().trim().regex(/^\d{8}$/) });
 export const directionSchema = z.enum(["up", "down", "left", "right"]);
 
 export const actionSchema = z.discriminatedUnion("kind", [
@@ -130,7 +133,7 @@ export interface StationView {
 }
 export interface CampusState {
   competitionId: number; now: number; stations: StationView[]; games: (Omit<GameInfo, "mode"> & { mode: "versus"; enabled: boolean })[];
-  leaderboard: Leaderboard; floorMaps: Record<Floor, FloorMapStatus>; doubleChance: number;
+  leaderboard: Leaderboard; floorMaps: Record<Floor, FloorMapStatus>; doubleChance: number; selfRegistration: boolean;
 }
 export interface QueueView { stationId: string; position: number }
 export interface RouteView {
@@ -149,16 +152,25 @@ export interface HostView {
 }
 export interface StationEntry { stationId: string; url: string; expiresAt: number }
 export interface AdminState {
-  competitionId: number; players: (PlayerIdentity & { stationId: string | null; needsLink: boolean })[];
+  competitionId: number; selfRegistration: boolean; liveRooms: number; queuedPlayers: number;
+  competitions: CompetitionSummary[];
+  players: (PlayerIdentity & {
+    stationId: string | null; needsLink: boolean; studentNumber: string | null; suspended: boolean;
+  })[];
   audit: { action: string; detail: string; date: number }[];
   connections: { sockets: number; players: number; hosts: number; errors: number };
   sessions: { id: string; stationId: string; gameId: string; competitionId: number; teamId: string | null; round: number; step: number | null; status: RoomStatus; startedAt: number | null; endedAt: number; reason: EndReason | null; voidedAt: number | null }[];
 }
+export interface CompetitionSummary {
+  id: number; openedAt: number; closedAt: number | null; resetReason: string | null;
+}
+export interface StudentCredential { id: string; name: string; studentNumber: string; code: string }
 
 export interface ClientEvents {
   "campus:watch": (body: null, ack: (value: Ack<CampusState>) => void) => void;
   "clock:sync": (body: null, ack: (value: Ack<number>) => void) => void;
   "player:join": (body: z.infer<typeof registrationSchema>, ack: (value: Ack<{ token: string; state: PlayerView }>) => void) => void;
+  "player:login": (body: z.input<typeof studentLoginSchema>, ack: (value: Ack<{ token: string; state: PlayerView }>) => void) => void;
   "player:reconnect": (body: { token: string }, ack: (value: Ack<PlayerView>) => void) => void;
   "player:leave": (body: null, ack: (value: Ack) => void) => void;
   "team:join": (body: { teamId: string }, ack: (value: Ack<PlayerView>) => void) => void;

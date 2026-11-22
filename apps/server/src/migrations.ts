@@ -315,5 +315,23 @@ WHERE json_valid(metrics) AND json_type(metrics,'$.attempted')='integer'
     ON teammate.session_id=member.session_id AND teammate.side=member.side AND teammate.player_id<>member.player_id
     WHERE member.session_id=result.session_id AND member.player_id=result.player_id);
 `
+}, {
+  version: 8,
+  sql: `
+ALTER TABLE players ADD COLUMN student_no TEXT;
+ALTER TABLE players ADD COLUMN access_hash TEXT;
+ALTER TABLE players ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0 CHECK (suspended IN (0,1));
+CREATE UNIQUE INDEX unique_student_number ON players(student_no) WHERE student_no IS NOT NULL;
+ALTER TABLE settings ADD COLUMN self_registration INTEGER NOT NULL DEFAULT 1 CHECK (self_registration IN (0,1));
+ALTER TABLE competitions ADD COLUMN reset_reason TEXT;
+CREATE TABLE competition_rosters (
+  competition_id INTEGER NOT NULL REFERENCES competitions(id),
+  player_id TEXT NOT NULL REFERENCES players(player_id),
+  player_name TEXT NOT NULL,
+  team_id TEXT NOT NULL REFERENCES teams(team_id),
+  joined_at INTEGER NOT NULL,
+  PRIMARY KEY (competition_id, player_id)
+) STRICT;
+`
 }];
 

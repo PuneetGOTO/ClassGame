@@ -16,6 +16,7 @@ import { RequestError, Store, type MemberRow, type MatchTicket, type SessionRow 
 import { checkStationQr, qrExpiry, stationQr } from "./station-qr";
 import { Arena, matchMode } from "./arena";
 import { selectMatch, type Candidate, type MatchChoice } from "./matchmaking";
+import { validStudentCode } from "./student-codes";
 
 export type PeerData = { playerId?: string; hostId?: string; entryOrigin?: string; practiceRole?: PracticeRole;
   stationScan?: { stationId: string; hostConnection: string; expiresAt: number } };
@@ -88,7 +89,8 @@ export class Campus {
       games: GAMES.map(game => ({
         ...game, mode: "versus", enabled: Boolean(this.store.get<{ enabled: number }>("SELECT enabled FROM games WHERE game_id=?", game.id)?.enabled)
       })),
-      leaderboard: this.leader, floorMaps: this.store.mapStatus(), doubleChance: this.store.doubleChance()
+      leaderboard: this.leader, floorMaps: this.store.mapStatus(), doubleChance: this.store.doubleChance(),
+      selfRegistration: this.store.selfRegistration()
     };
   }
   private roomView(room: Room, viewer?: string): RoomView {
@@ -194,8 +196,12 @@ export class Campus {
   adminView(): AdminState {
     return {
       competitionId: this.store.competitionId,
+      selfRegistration: this.store.selfRegistration(),
+      competitions: this.store.competitions(),
+      liveRooms: this.rooms.size,
+      queuedPlayers: this.store.get<{ count: number }>("SELECT COUNT(*) AS count FROM match_search")!.count,
       players: this.store.players().map(player => ({ ...this.store.publicPlayer(player), stationId: this.playerStation(player.player_id),
-        needsLink: !player.token_hash })),
+        needsLink: !player.student_no && !player.token_hash, studentNumber: player.student_no, suspended: Boolean(player.suspended) })),
       audit: this.store.all("SELECT action,detail,created_at AS date FROM audit_log ORDER BY id DESC LIMIT 100"),
       connections: { sockets: this.io.sockets.sockets.size, players: this.players.size, hosts: this.hosts.size, errors: this.errors },
       sessions: this.store.sessionHistory(Number.MAX_SAFE_INTEGER, 60).sessions
@@ -241,8 +247,22 @@ export class Campus {
   }
   joinPlayer(socket: CampusSocket, name: string, teamId?: string) {
     this.requireFreeSocket(socket);
+    if (!this.store.selfRegistration()) throw new RequestError("請使用學號登入，或向管理員取得入場連結", "registration-closed", 403);
     const { id, token } = this.store.addPlayer(name, teamId, this.now());
     return { token, state: this.attachPlayer(socket, id) };
+  }
+  async loginStudent(socket: CampusSocket, studentNumber: string, code: string) {
+    this.requireFreeSocket(socket);
+    const account = this.store.playerFromStudentNumber(studentNumber);
+    const valid = await validStudentCode(code, account?.access_hash ?? null, this.qrSecret);
+    const current = account && this.store.player(account.player_id);
+    if (!valid || !current || current.suspended || current.student_no !== studentNumber || current.access_hash !== account.access_hash) {
+      throw new RequestError("學號或登入碼有誤，請向管理員確認", "student-login", 401);
+    }
+    if (!socket.connected) throw new RequestError("請重新連線後登入", "offline", 409);
+    this.requireFreeSocket(socket);
+    const token = this.store.rotateToken(current.player_id);
+    return { token, state: this.attachPlayer(socket, current.player_id) };
   }
   reconnect(socket: CampusSocket, token: string) {
     const player = this.store.playerFromToken(token);
@@ -793,14 +813,25 @@ export class Campus {
   }
   kick(id: string, revoke: boolean) {
     if (!this.store.player(id)) throw new RequestError("找不到玩家", "not-found", 404);
-    const socket = this.players.get(id);
     if (revoke) {
       this.store.run("UPDATE players SET token_hash=NULL WHERE player_id=?", id);
       this.leaveStation(id, true);
     }
-    socket?.emit("player:kicked", { message: "管理員已中止此手機連線", replaced: false });
-    socket?.disconnect(true);
+    this.disconnectPlayerAccount(id, "管理員已中止此手機連線");
     this.store.audit(revoke ? "player.kick" : "player.link", id, this.now());
+  }
+  disconnectPlayerAccount(id: string, message: string) {
+    const socket = this.players.get(id);
+    socket?.emit("player:kicked", { message, replaced: false });
+    socket?.disconnect(true);
+    this.mark();
+  }
+  suspendPlayer(id: string, suspended: boolean) {
+    if (!this.store.setPlayerSuspended(id, suspended, this.now())) return;
+    if (suspended) {
+      this.leaveStation(id, true);
+      this.disconnectPlayerAccount(id, "此帳號已停用，請聯絡管理員");
+    }
     this.mark();
   }
   configureStation(id: string, settings: { name: string; floor?: Floor; x: number; y: number; hostId: string; gameId: string; open: boolean }) {
@@ -849,13 +880,17 @@ export class Campus {
     this.auditStation("station." + action, stationId);
     this.mark();
   }
-  resetCompetition() {
-    this.store.resetCompetition(this.now());
+  resetCompetition(reason: string | null = null, expected?: number) {
+    if (expected !== undefined && expected !== this.store.competitionId) {
+      throw new RequestError("這一屆已結束，請重新查看排行榜後再操作", "competition-changed", 409);
+    }
+    this.store.resetCompetition(this.now(), "competition.reset", reason);
     for (const room of [...this.rooms.values(), ...this.lastAtStation.values()]) room.arena?.destroy();
     this.rooms.clear();
     this.lastAtStation.clear();
     for (const socket of this.io.sockets.sockets.values()) delete socket.data.stationScan;
     this.mark();
+    this.flush();
   }
 }
 

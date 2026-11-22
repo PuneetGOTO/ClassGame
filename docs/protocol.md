@@ -22,7 +22,7 @@ Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入
 | 方向 | 事件 | 功能 |
 | --- | --- | --- |
 | 客戶端 → 伺服器 | `campus:watch`、`clock:sync` | 訂閱校園狀態及對時 |
-| 客戶端 → 伺服器 | `player:join`、`player:reconnect`、`player:leave` | 登記、恢復身分、離開 |
+| 客戶端 → 伺服器 | `player:join`、`player:login`、`player:reconnect`、`player:leave` | 暱稱登記、學號登入、恢復身分、離開 |
 | 客戶端 → 伺服器 | `team:join` | 請求更換隊伍 |
 | 客戶端 → 伺服器 | `match:find`、`match:assist`、`match:cancel` | 尋找對手、報名陪打、退出配對或候場 |
 | 客戶端 → 伺服器 | `station:scan`、`station:join`、`station:leave` | 驗證房間入場碼、入場或排隊、離開站點 |
@@ -38,6 +38,8 @@ Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入
 | 伺服器 → 客戶端 | `admin:status`、`system:error` | 後台監控和錯誤回報 |
 
 客戶端請求回覆為 `{ ok: true, data }` 或 `{ ok: false, code, error }`。正式結算事件由伺服器傳送。`game:input` 接受角色移動 `move`、游標 `cursor`、動作 `action`、選項 `choice`、文字答案 `answer`。伺服器比對當前題目 ID、玩家陣營及場次。管理 API 的路由與權限位於 [service.ts](../apps/server/src/service.ts)。
+
+`player:login` 接收 `studentNumber` 和 `code`。登入成功後簽發新的手機令牌，原裝置會退出。學號和登入碼雜湊由伺服器管理，公開事件及公開排行榜只提供玩家名稱。`campus:state.selfRegistration` 指示手機是否提供暱稱登記。
 
 答題經伺服器接受後，該玩家須等候 2,000 毫秒才能再送出答案。正式賽的 `match.remote` 和練習房的 `remote` 傳回個人的 `answerAvailableAt`。提早送出目前題目的答案會收到 `answer-cooldown`。同方其他手機各自計時。
 
@@ -57,9 +59,9 @@ Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入
 
 | 資料表 | 用途 |
 | --- | --- |
-| `players`、`teams` | 玩家 ID、連線、雜湊令牌、隊伍與個人累計。每隊最多 5 位 |
+| `players`、`teams` | 玩家 ID、唯一學號、登入碼及令牌雜湊、停用狀態、隊伍與個人累計。每隊最多 5 位 |
 | `games`、`hosts`、`campus_stations` | 遊戲和插件設定、固定螢幕、站點與地圖座標 |
-| `competitions`、`game_rounds` | 活動屆數及舊制正式輪次 |
+| `competitions`、`competition_rosters`、`game_rounds` | 活動屆數、重置原因、封存名單及舊制正式輪次 |
 | `match_search`、`player_routes` | 當前配對隊列及舊制個人路線 |
 | `game_sessions`、`session_members` | 場次時鐘、各方遊戲狀態、報到、陣營、關次及重連狀態 |
 | `game_results`、`team_results` | 個人出席、勝負、基礎分、計入分、耗時及任務統計，以及舊制多人場記錄 |
@@ -70,6 +72,8 @@ Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入
 `game_results` 的 `(session_id, player_id)` 唯一。同屆、同玩家、同關次的有效正式成績也具唯一約束。場次狀態轉移、結果寫入及排行榜來源更新在同一個 SQLite 交易內完成。管理員使用 `POST /api/admin/sessions/:id/void` 連同撤銷原因，交易內標記原始紀錄、重算受影響玩家的成績及寫入稽核。SQLite 依關次導出難度權重和計入分。
 
 遷移第 3 版將站點配對到三樓與四樓，第 4 版換算重繪圖座標，第 5 版加入個人路線與計分權重，第 6 版保存對戰配對、陣營及每位玩家的計分難度。第 7 版保存大螢幕暫停時鐘、陪打、和局及撤銷時間，舊版 2 對 2 的答題合計標為本方紀錄。結果的 `baseAwarded` 為依難度計算的基礎分，`awarded` 包括雙倍調整。
+
+第 8 版加入學生帳號、暱稱登記設定及屆別名單封存。重置時在同一交易中保存本屆的玩家名稱、隊伍及重置原因，並啟用下一屆。歷史榜從該屆的正式結算紀錄讀取。
 
 ## 註冊插件
 

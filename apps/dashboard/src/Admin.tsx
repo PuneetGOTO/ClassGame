@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   ArrowsLeftRight, ArrowRight, ClipboardText, Copy, DownloadSimple, Flag, GameController, GearSix, Key, Lightning, LinkSimple,
-  ListChecks, MapPin, PencilSimple, Plug, Plus, ShieldCheck, Trash, UsersThree, Warning
+  ListChecks, MapPin, PencilSimple, Plug, Plus, ShieldCheck, Trash, Trophy, UsersThree
 } from "@phosphor-icons/react";
-import { gameById, TEAM_SIZE } from "../../../packages/shared/catalog";
+import { gameById, PLAYER_LIMIT, TEAM_SIZE } from "../../../packages/shared/catalog";
 import { floorLabel, FLOORS, type Floor } from "../../../packages/shared/floors";
-import type { AdminState, Result, StationView, TeamResult } from "../../../packages/shared/protocol";
+import { nameSchema, studentNumberSchema, type AdminState, type Result, type StationView, type StudentCredential, type TeamResult } from "../../../packages/shared/protocol";
 import { ROUTE_LENGTH } from "../../../packages/shared/route";
 import { Dialog, Empty, ErrorText, fmtChange, fmtScore, numberOf, StationStatus, Status, TeamTag } from "../../../packages/ui/components";
 import { FloorChooser, FloorGraphic } from "../../../packages/ui/floor-map";
 import { adminRequest, message, RemoteError, request, socket, type CampusConnection } from "../../../packages/ui/network";
+import { AdminLeaderboard, type ScoreScope } from "./AdminLeaderboard";
 
 const keyStorage = "campus.adminKey";
 const formatTime = (value: number) => new Intl.DateTimeFormat("zh-HK", {
@@ -24,6 +25,8 @@ const reasons: Record<string,string> = {
 };
 const auditNames: Record<string,string> = {
   "player.create": "新增玩家", "player.rename": "更名", "player.kick": "踢除玩家", "player.link": "重發入場連結",
+  "player.identity": "更新學號", "player.code": "重發登入碼", "player.suspend": "停用帳號", "player.reactivate": "重新啟用帳號",
+  "settings.registration": "變更暱稱登記",
   "team.change": "變更隊伍", "team.auto": "自動分隊", "map.update": "更新地圖",
   "station.configure": "更新站點", "station.start": "開始場次", "station.stop": "停止場次",
   "station.reset": "作廢場次", "station.retry": "開放重玩", "station.clear-queue": "清空隊列",
@@ -32,7 +35,7 @@ const auditNames: Record<string,string> = {
 };
 type AdminPlayer = AdminState["players"][number];
 type Session = AdminState["sessions"][number];
-type Confirm = { title: string; detail: string; run: () => Promise<void>; exact?: string };
+type Confirm = { title: string; detail: string; run: () => Promise<void> };
 type Run = (fn: () => Promise<void>, success?: string) => Promise<void>;
 
 export function Admin({ connection }: { connection: CampusConnection }) {
@@ -40,12 +43,11 @@ export function Admin({ connection }: { connection: CampusConnection }) {
   const [secret, setSecret] = useState(() => sessionStorage.getItem(keyStorage) || "");
   const [entry, setEntry] = useState(secret);
   const [admin, setAdmin] = useState<AdminState | null>(null);
-  const [section, setSection] = useState<"stations" | "players" | "sessions" | "system">("stations");
+  const [section, setSection] = useState<"stations" | "players" | "leaderboard" | "sessions" | "system">("stations");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<Confirm>();
-  const [confirmValue, setConfirmValue] = useState("");
   const [practiceLink, setPracticeLink] = useState("");
 
   useEffect(() => {
@@ -102,19 +104,24 @@ export function Admin({ connection }: { connection: CampusConnection }) {
     </form>
   </section></main>;
 
-  async function exportCsv(teams = false) {
+  async function exportCsv(scope: ScoreScope = "players", competitionId?: number) {
     await run(async () => {
-      const response = await fetch("/api/admin/scores.csv" + (teams ? "?scope=teams" : ""), { headers: { Authorization: "Bearer " + secret } });
+      const params = new URLSearchParams({ scope });
+      if (competitionId !== undefined) params.set("competition", String(competitionId));
+      const response = await fetch("/api/admin/scores.csv?" + params, { headers: { Authorization: "Bearer " + secret } });
       if (!response.ok) throw new Error("成績匯出失敗，請確認管理連線");
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url;
-      link.download = teams ? "campus-teams.csv" : "campus-scores.csv";
+      const disposition = response.headers.get("content-disposition") ?? "";
+      const filename = /\bfilename=(?:"([^"]+)"|([^;\s]+))/i.exec(disposition);
+      link.download = filename?.[1] ?? filename?.[2]
+        ?? (scope === "teams" ? "campus-teams.csv" : "campus-scores.csv");
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
     });
   }
-  const ask = (value: Confirm) => { setConfirmValue(""); setConfirm(value); };
+  const ask = (value: Confirm) => { setError(""); setConfirm(value); };
   const logOut = () => {
     sessionStorage.removeItem(keyStorage);
     location.reload();
@@ -132,7 +139,7 @@ export function Admin({ connection }: { connection: CampusConnection }) {
     </div>
     <div className="segmented admin-tabs">
       {([
-        ["stations","站點管理",MapPin],["players","玩家與隊伍",UsersThree],["sessions","場次紀錄",ListChecks],
+        ["stations","站點管理",MapPin],["players","玩家與隊伍",UsersThree],["leaderboard","排行榜管理",Trophy],["sessions","場次紀錄",ListChecks],
         ["system","規則與稽核",Plug]
       ] as const).map(([id,label,Icon]) => <button key={id} aria-pressed={section === id} onClick={() => { setSection(id); setError(""); setSuccess(""); }}>
         <Icon size={18}/>{label}</button>)}
@@ -140,8 +147,10 @@ export function Admin({ connection }: { connection: CampusConnection }) {
     <ErrorText text={error}/>
     {success && <p className="notice success" role="status">{success}</p>}
     {section === "stations" && <AdminStations connection={connection} adminKey={secret} busy={busy} run={run} ask={ask}/>}
-    {section === "players" && <AdminPlayers admin={admin} connection={connection} adminKey={secret} busy={busy} run={run} ask={ask}
-      exportTeams={() => void exportCsv(true)}/>}
+    {section === "players" && <AdminPlayers admin={admin} connection={connection} adminKey={secret} busy={busy} error={error}
+      run={run} ask={ask} clearError={() => setError("")} exportTeams={() => void exportCsv("teams")}/>}
+    {section === "leaderboard" && <AdminLeaderboard admin={admin} live={campus?.competitionId === admin.competitionId ? campus.leaderboard : undefined}
+      adminKey={secret} busy={busy} error={error} run={run} exportCsv={(scope, competitionId) => void exportCsv(scope, competitionId)}/>}
     {section === "sessions" && <AdminSessions admin={admin} adminKey={secret} run={run} busy={busy}/>}
     {section === "system" && <div className="admin-columns">
       {campus && <DoubleRules key={campus.doubleChance} chance={campus.doubleChance} adminKey={secret} run={run} busy={busy}/>}
@@ -153,13 +162,6 @@ export function Admin({ connection }: { connection: CampusConnection }) {
           <div><dt>主機</dt><dd>{admin.connections.hosts} / 20</dd></div>
           <div><dt>本次啟動的伺服器錯誤</dt><dd>{admin.connections.errors}</dd></div>
         </dl>
-      </section>
-      <section className="panel admin-panel"><h2><Warning size={22}/> 重設正式比賽</h2>
-        <p className="muted">建立新一屆比賽，所有玩家的新積分歸零，保留隊伍名單、舊場次結果及操作紀錄。</p>
-        <button className="button danger" disabled={busy} onClick={() => ask({
-          title: "重設正式比賽", detail: "進行中的場次將作廢，全部隊列將清空。輸入 RESET 確認。", exact: "RESET",
-          run: async () => { await adminRequest(secret,"/competition/reset","POST",{ confirm: "RESET" }); }
-        })}><Trash size={17}/> 重設比賽</button>
       </section>
       <section className="panel admin-panel admin-wide"><h2><ClipboardText size={22}/> 操作稽核</h2>
         {!admin.audit.length ? <Empty title="目前沒有管理紀錄"/> : <div className="table-scroll"><table>
@@ -181,12 +183,10 @@ export function Admin({ connection }: { connection: CampusConnection }) {
       <p className="muted">{confirm.detail}</p>
       <form className="form-stack" onSubmit={event => {
         event.preventDefault();
-        if (confirm.exact && confirmValue !== confirm.exact) return;
         setConfirm(undefined);
         void run(confirm.run,"操作完成");
       }}>
-        {confirm.exact && <label>確認文字<input value={confirmValue} onChange={event => setConfirmValue(event.target.value)} required/></label>}
-        <button className="button danger full" disabled={busy || (!!confirm.exact && confirmValue !== confirm.exact)} type="submit">確認{confirm.title}</button>
+        <button className="button danger full" disabled={busy} type="submit">確認{confirm.title}</button>
       </form>
     </Dialog>}
     {!campus && <p className="notice">等候校園狀態同步</p>}
@@ -345,71 +345,134 @@ function DoubleRules({ chance, adminKey, run, busy }: { chance: number; adminKey
   </section>;
 }
 
-function AdminPlayers({ admin, connection, adminKey, busy, run, ask, exportTeams }: {
-  admin: AdminState; connection: CampusConnection; adminKey: string; busy: boolean; run: Run; ask: (value: Confirm) => void;
-  exportTeams: () => void;
+function AdminPlayers({ admin, connection, adminKey, busy, error, run, ask, clearError, exportTeams }: {
+  admin: AdminState; connection: CampusConnection; adminKey: string; busy: boolean; error: string; run: Run; ask: (value: Confirm) => void;
+  clearError: () => void; exportTeams: () => void;
 }) {
   const [editing, setEditing] = useState<AdminPlayer>();
   const [showCreate,setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [search,setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
   const [joinLink,setJoinLink] = useState("");
+  const [credentials, setCredentials] = useState<StudentCredential[]>([]);
   const [results,setResults] = useState<{ name: string; items: Result[] }>();
   const teams = connection.state?.leaderboard.teams.slice().sort((a,b) => a.id.localeCompare(b.id)) ?? [];
+  const available = PLAYER_LIMIT - admin.players.length;
+  const query = search.normalize("NFKC").trim().toLowerCase();
+  const matchingPlayers = admin.players.filter(player => {
+    if ((filter === "linked" && !player.studentNumber) || (filter === "unlinked" && player.studentNumber) ||
+      (filter === "suspended" && !player.suspended)) return false;
+    return [player.name, player.studentNumber, player.teamId].some(value => value?.normalize("NFKC").toLowerCase().includes(query));
+  });
   async function showLink(token: string) {
     const response = await fetch("/api/entry?origin=" + encodeURIComponent(location.origin));
     const info = response.ok ? await response.json() : { url: new URL("/controller",location.href).href };
     setJoinLink(info.url + "#join=" + encodeURIComponent(token));
   }
   const actions = (player: AdminPlayer) => [
-    [PencilSimple,"編輯玩家", () => setEditing(player)],
+    [PencilSimple,"編輯玩家", () => { clearError(); setEditing(player); }],
     [ListChecks,"查看玩家成績", () => void run(async () => setResults({ name: player.name, items:
       await adminRequest<Result[]>(adminKey,"/players/" + player.id + "/results") }))],
-    [LinkSimple,"重發入場連結", () => void run(async () => {
-      const result = await adminRequest<{ token: string }>(adminKey,"/players/" + player.id + "/link","POST");
-      await showLink(result.token);
+    [player.studentNumber ? Key : LinkSimple, player.studentNumber ? "重發登入碼" : "重發入場連結", () => {
+      const title = player.studentNumber ? "重發登入碼" : "重發入場連結";
+      ask({ title, detail: "重發後，" + player.name + " 的舊登入憑證會失效，手機會登出。", run: async () => {
+        if (player.studentNumber) setCredentials([await adminRequest<StudentCredential>(adminKey,"/players/" + player.id + "/code","POST")]);
+        else {
+          const { token } = await adminRequest<{ token: string }>(adminKey,"/players/" + player.id + "/link","POST");
+          await showLink(token);
+        }
+      } });
+    }],
+    [ShieldCheck, player.suspended ? "重新啟用帳號" : "停用帳號", () => ask({
+      title: player.suspended ? "重新啟用帳號" : "停用帳號",
+      detail: player.suspended ? "恢復 " + player.name + " 的入場資格。"
+        : "停用 " + player.name + " 的登入，並中止目前手機連線及配對。成績和帳號資料會保留。",
+      run: async () => { await adminRequest(adminKey,"/players/" + player.id + "/status","PUT",{ suspended: !player.suspended }); }
     })],
     [Trash,"踢除手機連線", () => ask({ title: "踢除手機連線", detail: "中止 " + player.name + " 的手機連線並停用舊入場連結。",
       run: async () => { await adminRequest(adminKey,"/players/" + player.id + "/kick","POST"); } })]
   ] as const;
   return <div className="admin-columns player-admin">
     <section className="panel admin-panel">
-      <div className="section-line"><h2><UsersThree size={22}/> 玩家 {admin.players.length} / 50</h2>
+      <div className="section-line"><h2><UsersThree size={22}/> 玩家 {admin.players.length} / {PLAYER_LIMIT}</h2>
         <div className="admin-actions"><button className="button compact secondary" disabled={busy} onClick={() => ask({
           title: "自動分隊", detail: "依玩家登記順序重新編成 10 隊，每隊最多 5 人。",
           run: async () => { await adminRequest(adminKey,"/teams/auto","POST"); }
-        })}>自動分隊</button><button className="button compact primary" disabled={busy || admin.players.length >= 50}
-          onClick={() => setShowCreate(true)}><Plus size={16}/> 新增玩家</button></div></div>
-      <input aria-label="搜尋玩家" placeholder="搜尋玩家或隊伍編號" value={search} onChange={event => setSearch(event.target.value)}/>
-      {!admin.players.length ? <Empty title="尚未有玩家"/> : <div className="table-scroll"><table>
-        <thead><tr><th>名稱</th><th>隊伍</th><th>連線</th><th>所在站點</th><th>進度</th><th>總分</th><th>操作</th></tr></thead>
-        <tbody>{admin.players.filter(player => (player.name + " " + player.teamId).toLowerCase().includes(search.trim().toLowerCase())).map(player => <tr key={player.id}>
-          <th scope="row">{player.name}</th><td><TeamTag id={player.teamId}/></td><td><Status online={player.connected} label={player.needsLink ? "連結已停用" : undefined}/></td>
+        })}>自動分隊</button><button className="button compact secondary" disabled={busy || !available}
+          onClick={() => { clearError(); setShowImport(true); }}>批量新增</button>
+          <button className="button compact primary" disabled={busy || !available}
+            onClick={() => { clearError(); setShowCreate(true); }}><Plus size={16}/> 新增玩家</button></div></div>
+      <div className="account-filters">
+        <input type="search" aria-label="搜尋玩家" placeholder="搜尋姓名、學號或隊伍" value={search} onChange={event => setSearch(event.target.value)}/>
+        <select aria-label="篩選帳號狀態" value={filter} onChange={event => setFilter(event.target.value)}>
+          <option value="all">所有帳號</option><option value="linked">已綁定學號</option>
+          <option value="unlinked">待綁定學號</option><option value="suspended">已停用</option>
+        </select>
+      </div>
+      {!matchingPlayers.length ? <Empty title={admin.players.length ? "找不到符合的玩家" : "尚未有玩家"}/> : <div className="table-scroll"><table>
+        <thead><tr><th>名稱</th><th>學號</th><th>隊伍</th><th>狀態</th><th>所在站點</th><th>進度</th><th>總分</th><th>操作</th></tr></thead>
+        <tbody>{matchingPlayers.map(player => <tr key={player.id}>
+          <th scope="row">{player.name}</th><td className="student-number">{player.studentNumber ?? "—"}</td>
+          <td><TeamTag id={player.teamId}/></td><td><Status online={player.connected && !player.suspended}
+            label={player.suspended ? "已停用" : player.needsLink ? "連結已停用" : undefined}/></td>
           <td>{player.stationId ? connection.state?.stations.find(item => item.id === player.stationId)?.name ?? player.stationId : "—"}</td>
           <td>{Math.min(connection.state?.leaderboard.players.find(item => item.id === player.id)?.completed ?? 0, ROUTE_LENGTH)} / {ROUTE_LENGTH}</td>
           <td className="em-score">{fmtScore(player.totalScore)}</td><td><div className="player-actions">
             {actions(player).map(([Icon,label,fn]) => <button key={label} className="icon-button" type="button" disabled={busy}
-              onClick={fn} aria-label={label + " " + player.name} title={label}><Icon size={17}/></button>)}</div></td>
+              onClick={fn} aria-label={label + " " + player.name + (player.studentNumber ? " " + player.studentNumber : "")}
+              title={label}><Icon size={17}/></button>)}</div></td>
         </tr>)}</tbody>
       </table></div>}
     </section>
-    <section className="panel admin-panel"><div className="section-line"><h2>隊伍名單</h2>
-      <button className="button compact secondary" type="button" disabled={busy} onClick={exportTeams}><DownloadSimple size={15}/> 隊伍 CSV</button>
-      </div><div className="admin-rosters">
-      {teams.map(team => <div key={team.id}><TeamTag id={team.id} name={team.name}/><span>{team.members.length}/{TEAM_SIZE} 人</span>
-        <p>{team.members.length ? team.members.map(player => player.name).join("、") : "等候隊員"}</p></div>)}
-    </div></section>
+    <div className="account-sidebar">
+      <section className="panel admin-panel">
+        <h2>入場設定</h2>
+        <p className="muted">{admin.selfRegistration ? "開放以暱稱自行登記。" : "玩家可使用學號登入或管理員發出的入場連結。"}</p>
+        <button type="button" className="button secondary" disabled={busy} onClick={() => {
+          const open = !admin.selfRegistration;
+          void run(async () => { await adminRequest(adminKey, "/registration", "PUT", { open }); }, open ? "已開放暱稱登記" : "已關閉暱稱登記");
+        }}>{admin.selfRegistration ? "關閉暱稱登記" : "開放暱稱登記"}</button>
+      </section>
+      <section className="panel admin-panel"><div className="section-line"><h2>隊伍名單</h2>
+        <button className="button compact secondary" type="button" disabled={busy} onClick={exportTeams}><DownloadSimple size={15}/> 隊伍 CSV</button>
+        </div><div className="admin-rosters">
+        {teams.map(team => <div key={team.id}><TeamTag id={team.id} name={team.name}/><span>{team.members.length}/{TEAM_SIZE} 人</span>
+          <p>{team.members.length ? team.members.map(player => player.name).join("、") : "等候隊員"}</p></div>)}
+      </div></section>
+    </div>
     {showCreate && <Dialog title="新增玩家" onClose={() => setShowCreate(false)}>
-      <PlayerCreate teams={teams} busy={busy} onCreate={(name,teamId) => void run(async () => {
-        const result = await adminRequest<{ token: string }>(adminKey,"/players","POST",{ name, teamId: teamId || undefined });
+      <PlayerCreate teams={teams} busy={busy} error={error} onCreate={body => void run(async () => {
+        const result = await adminRequest<StudentCredential | { token: string }>(adminKey,"/players","POST",body);
         setShowCreate(false);
-        await showLink(result.token);
+        if ("code" in result) setCredentials([result]);
+        else await showLink(result.token);
       },"玩家已新增")}/>
     </Dialog>}
+    {showImport && <Dialog title="批量新增學生" onClose={() => setShowImport(false)}>
+      <StudentImport available={available} busy={busy} error={error} onImport={students => void run(async () => {
+        setCredentials(await adminRequest<StudentCredential[]>(adminKey, "/players/import", "POST", { students }));
+        setShowImport(false);
+      },"學生帳號已新增")}/>
+    </Dialog>}
     {editing && <Dialog title={"編輯 " + editing.name} onClose={() => setEditing(undefined)}>
-      <PlayerEdit player={editing} teams={teams} busy={busy} onSave={body => void run(async () => {
-        await adminRequest(adminKey,"/players/" + editing.id,"PATCH",body);
+      <PlayerEdit player={editing} teams={teams} busy={busy} error={error} onSave={body => void run(async () => {
+        const credential = await adminRequest<StudentCredential | null>(adminKey,"/players/" + editing.id,"PATCH",body);
         setEditing(undefined);
+        if (credential) setCredentials([credential]);
       },"玩家資料已更新")}/>
+    </Dialog>}
+    {!!credentials.length && <Dialog title="學生登入資料" onClose={() => setCredentials([])}>
+      <p className="muted">將學號和登入碼交給對應學生。之後可從玩家列表重發登入碼。</p>
+      <div className="table-scroll"><table>
+        <thead><tr><th>姓名</th><th>學號</th><th>登入碼</th></tr></thead>
+        <tbody>{credentials.map(item => <tr key={item.id}><th scope="row">{item.name}</th>
+          <td className="student-number">{item.studentNumber}</td><td><code className="issued-code">{item.code}</code></td></tr>)}</tbody>
+      </table></div>
+      <div className="admin-actions dialog-actions"><button className="button secondary" disabled={busy} onClick={() => void run(
+        () => copyText(credentials.map(item => [item.name, item.studentNumber, item.code].join("\t")).join("\n")), "已複製登入資料")}>
+        <Copy size={17}/> 複製登入資料</button></div>
+      <ErrorText text={error}/>
     </Dialog>}
     {joinLink && <Dialog title="手機入場連結" onClose={() => setJoinLink("")}>
       <p className="muted">將專屬連結交給該玩家。</p><label className="field">入場連結<input readOnly value={joinLink}
@@ -423,29 +486,92 @@ function AdminPlayers({ admin, connection, adminKey, busy, run, ask, exportTeams
   </div>;
 }
 type Teams = NonNullable<CampusConnection["state"]>["leaderboard"]["teams"];
+type PlayerDetails = { name?: string; studentNumber?: string; teamId?: string; swapId?: string };
 
-function PlayerCreate({ teams, busy, onCreate }: { teams: Teams; busy: boolean; onCreate: (name: string, team: string) => void }) {
+function PlayerCreate({ teams, busy, error, onCreate }: {
+  teams: Teams; busy: boolean; error: string; onCreate: (body: { name: string; studentNumber?: string; teamId?: string }) => void;
+}) {
   const [name,setName] = useState("");
   const [team,setTeam] = useState("");
-  return <form className="form-stack" onSubmit={event => { event.preventDefault(); onCreate(name,team); }}>
+  const [studentNumber, setStudentNumber] = useState("");
+  const identity = studentNumberSchema.safeParse(studentNumber);
+  const valid = nameSchema.safeParse(name).success && (!studentNumber.trim() || identity.success);
+  return <form className="form-stack" onSubmit={event => {
+    event.preventDefault();
+    if (valid) onCreate({ name, teamId: team || undefined, studentNumber: identity.data });
+  }}>
     <label>玩家名稱<input required maxLength={24} value={name} onChange={event => setName(event.target.value)}/></label>
+    <label>學生證號碼<input value={studentNumber} maxLength={24} autoComplete="off" onChange={event => setStudentNumber(event.target.value)}/></label>
+    <p className="muted small">填寫學號會產生 8 位登入碼。留空會產生手機入場連結。</p>
     <label>隊伍<select value={team} onChange={event => setTeam(event.target.value)}><option value="">自動分隊</option>
       {teams.map(team => <option key={team.id} value={team.id} disabled={team.members.length >= TEAM_SIZE}>{team.name}</option>)}</select></label>
-    <button className="button primary full" type="submit" disabled={busy || !name.trim()}>新增玩家並產生連結</button>
+    <ErrorText text={studentNumber.trim() && !identity.success ? "學號可用 2 至 24 個英數字、點、底線或連字號。" : error}/>
+    <button className="button primary full" type="submit" disabled={busy || !valid}>新增玩家並產生登入資料</button>
   </form>;
 }
-function PlayerEdit({ player, teams, busy, onSave }: {
-  player: AdminPlayer; teams: Teams; busy: boolean; onSave: (body: { name?: string; teamId?: string; swapId?: string }) => void
+
+function StudentImport({ available, busy, error, onImport }: {
+  available: number; busy: boolean; error: string; onImport: (students: { studentNumber: string; name: string }[]) => void;
+}) {
+  const [list, setList] = useState("");
+  const students: { studentNumber: string; name: string }[] = [];
+  const numbers = new Set<string>();
+  let problem = "";
+  for (const [index, line] of list.split(/\r?\n/).entries()) {
+    if (!line.trim()) continue;
+    const cells = line.includes("\t") ? line.split("\t") : line.split(/[,，]/);
+    const number = studentNumberSchema.safeParse(cells[0]);
+    const name = nameSchema.safeParse(cells[1]);
+    if (cells.length !== 2 || !number.success || !name.success) {
+      problem = "第 " + (index + 1) + " 行格式有誤。請使用「學號、姓名」兩欄。";
+      break;
+    }
+    if (numbers.has(number.data)) {
+      problem = "第 " + (index + 1) + " 行的學號在名單中重複。";
+      break;
+    }
+    numbers.add(number.data);
+    students.push({ studentNumber: number.data, name: name.data });
+  }
+  if (students.length > available && !problem) problem = "可新增的名額剩 " + available + " 人。";
+  return <form className="form-stack" onSubmit={event => {
+    event.preventDefault();
+    if (students.length && !problem) onImport(students);
+  }}>
+    <p className="muted">從試算表貼上學號和姓名兩欄，或每行以逗號分隔。系統會自動分隊。</p>
+    <label>學生名單<textarea rows={7} maxLength={8000} placeholder={"00123,陳同學\n00124,李同學"} spellCheck={false}
+      value={list} onChange={event => setList(event.target.value)} required/></label>
+    <p className="muted small">已讀取 {students.length} 人 · 可新增 {available} 人</p>
+    <ErrorText text={problem || error}/>
+    <button className="button primary full" type="submit" disabled={busy || !!problem || !students.length}>
+      匯入名單並產生登入碼
+    </button>
+  </form>;
+}
+
+function PlayerEdit({ player, teams, busy, error, onSave }: {
+  player: AdminPlayer; teams: Teams; busy: boolean; error: string; onSave: (body: PlayerDetails) => void;
 }) {
   const [name,setName] = useState(player.name);
+  const [number, setNumber] = useState(player.studentNumber ?? "");
   const [team,setTeam] = useState(player.teamId);
   const [swap,setSwap] = useState("");
+  const parsed = studentNumberSchema.safeParse(number);
+  const valid = nameSchema.safeParse(name).success && (parsed.success || (!number.trim() && !player.studentNumber));
+  const identityChanged = (parsed.data ?? null) !== player.studentNumber;
   const target = teams.find(item => item.id === team);
   const swapNeeded = team !== player.teamId && (target?.members.length ?? 0) >= TEAM_SIZE;
   return <div className="player-edit">
-    <form className="form-stack" onSubmit={event => { event.preventDefault(); onSave({ name }); }}>
+    <form className="form-stack" onSubmit={event => {
+      event.preventDefault();
+      if (valid) onSave({ name, studentNumber: identityChanged ? parsed.data : undefined });
+    }}>
       <label>玩家名稱<input required maxLength={24} value={name} onChange={event => setName(event.target.value)}/></label>
-      <button className="button secondary full" type="submit" disabled={busy || !name.trim() || name === player.name}>儲存名稱</button>
+      <label>學生證號碼<input value={number} required={player.studentNumber !== null} maxLength={24}
+        autoComplete="off" onChange={event => setNumber(event.target.value)}/></label>
+      {identityChanged && parsed.success && <p className="muted small">更新學號會產生新的登入碼，並讓原手機登出。</p>}
+      <ErrorText text={number.trim() && !parsed.success ? "學號可用 2 至 24 個英數字、點、底線或連字號。" : error}/>
+      <button className="button secondary full" type="submit" disabled={busy || !valid || (!identityChanged && name === player.name)}>儲存帳號資料</button>
     </form>
     <form className="form-stack" onSubmit={event => { event.preventDefault(); onSave({ teamId: team, swapId: swap || undefined }); }}>
       <label>隊伍<select value={team} onChange={event => { setTeam(event.target.value); setSwap(""); }}>

@@ -5,7 +5,7 @@ import {
 } from "@phosphor-icons/react";
 import { categoryLabel, gameById, TEAM_SIZE } from "../../../packages/shared/catalog";
 import { floorLabel } from "../../../packages/shared/floors";
-import type { Action, PlayerView, RoomView, Result, StationView } from "../../../packages/shared/protocol";
+import { studentNumberSchema, type Action, type PlayerView, type RoomView, type Result, type StationView } from "../../../packages/shared/protocol";
 import { completedRouteSteps, difficultyLabel, modeTitle, sideLabels, ROUTE_LENGTH, routeTierSizes, routePoints, routeTiers } from "../../../packages/shared/route";
 import { Countdown, Dialog, DoubleBanner, Empty, ErrorText, fmtChange, fmtScore, numberOf, RoomClock, ScreenPauseNotice, StationStatus, TeamTag } from "../../../packages/ui/components";
 import { GameControls, Members } from "../../../packages/ui/game-view";
@@ -29,6 +29,9 @@ export function Controller({ connection }: { connection: CampusConnection }) {
   const [player, setPlayer] = useState<PlayerView | null>(null);
   const [name, setName] = useState("");
   const [team, setTeam] = useState("");
+  const [signInMode, setSignInMode] = useState<"student" | "nickname">("student");
+  const [studentNumber, setStudentNumber] = useState("");
+  const [accessCode, setAccessCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(() => Boolean(localStorage.getItem(tokenKey) || location.hash.includes("join=")));
@@ -151,12 +154,18 @@ export function Controller({ connection }: { connection: CampusConnection }) {
     try { await action(); } catch (failure) { setError(message(failure)); }
     finally { setBusy(false); }
   }
+  const nicknameRegistration = campus?.selfRegistration === true;
+  const useNickname = nicknameRegistration && signInMode === "nickname";
   function join(event: FormEvent) {
     event.preventDefault();
     void run(async () => {
       if (!socket.connected && !socket.active) socket.connect();
-      const created = await request("player:join", { name, teamId: team || undefined });
+      const created = useNickname
+        ? await request("player:join", { name, teamId: team || undefined })
+        : await request("player:login", { studentNumber, code: accessCode });
       localStorage.setItem(tokenKey, created.token);
+      setAccessCode("");
+      setReplaced(false);
       update(created.state);
       await enterScanned(created.state);
     });
@@ -182,18 +191,32 @@ export function Controller({ connection }: { connection: CampusConnection }) {
       <p className="eyebrow">手機控制器</p>
       <h1>加入校園闖關</h1>
       <p className="muted">{routeStation ? floorLabel[routeStation.floor] + " " + routeStation.name + " · " + gameById.get(routeStation.gameId)?.name
-        : "登記後尋找對手，再到指定房間掃碼。遊戲會顯示在房間的大螢幕上。"}</p>
-      {scanAccepted && <p className="notice success">已讀取本站入場碼。請登記並尋找對手。</p>}
+        : "登入後尋找對手，再到指定房間掃碼入場。"}</p>
+      {scanAccepted && <p className="notice success">已讀取本站入場碼。請登入以恢復場次。</p>}
       {entryStation && !hasScan && <p className="notice">配對後請到指定房間掃描最新的 QR Code。</p>}
+      {nicknameRegistration && <div className="segmented sign-in-tabs" aria-label="入場方式">
+        <button type="button" aria-pressed={!useNickname} onClick={() => { setSignInMode("student"); setError(""); }}>學號登入</button>
+        <button type="button" aria-pressed={useNickname} onClick={() => { setSignInMode("nickname"); setAccessCode(""); setError(""); }}>暱稱登記</button>
+      </div>}
       <form onSubmit={join} className="form-stack">
-        <label>玩家名稱<input name="playerName" maxLength={24} required value={name} onChange={event => setName(event.target.value)} placeholder="輸入你的名稱" autoComplete="nickname"/></label>
-        <label>隊伍<select value={team} onChange={event => setTeam(event.target.value)}>
-          <option value="">自動分隊</option>
-          {campus?.leaderboard.teams.slice().sort((a,b) => a.id.localeCompare(b.id)).map(entry =>
-            <option key={entry.id} disabled={entry.members.length >= TEAM_SIZE} value={entry.id}>{entry.name}　{entry.members.length}/5</option>)}
-        </select></label>
+        {useNickname ? <>
+          <label>玩家名稱<input name="playerName" maxLength={24} required value={name}
+            onChange={event => setName(event.target.value)} placeholder="輸入你的名稱" autoComplete="nickname"/></label>
+          <label>隊伍<select value={team} onChange={event => setTeam(event.target.value)}>
+            <option value="">自動分隊</option>
+            {campus?.leaderboard.teams.slice().sort((a,b) => a.id.localeCompare(b.id)).map(entry =>
+              <option key={entry.id} disabled={entry.members.length >= TEAM_SIZE} value={entry.id}>{entry.name}　{entry.members.length}/5</option>)}
+          </select></label>
+        </> : <>
+          <label>學生證號碼<input name="username" autoComplete="username" autoCapitalize="characters" spellCheck={false} type="text"
+            maxLength={24} required value={studentNumber} onChange={event => setStudentNumber(event.target.value)} placeholder="按學生證輸入學號"/></label>
+          <label>登入碼<input name="password" type="password" inputMode="numeric" autoComplete="current-password" maxLength={8}
+            required value={accessCode} onChange={event => setAccessCode(event.target.value)} placeholder="管理員提供的 8 位數字"/></label>
+        </>}
         <ErrorText text={scanError || error}/>
-        <button className="button primary full" type="submit" disabled={!online || busy || !name.trim()}>{busy ? <CircleNotch size={18}/> : "加入活動"} <ArrowRight size={18}/></button>
+        <button className="button primary full" type="submit" disabled={!online || busy ||
+          (useNickname ? !name.trim() : !studentNumberSchema.safeParse(studentNumber).success || !/^\d{8}$/.test(accessCode))}>
+          {busy ? <CircleNotch size={18}/> : useNickname ? "加入活動" : "登入活動"} <ArrowRight size={18}/></button>
       </form>
       {replaced && <button type="button" className="button secondary full" onClick={() => location.reload()}>在這部裝置恢復連線</button>}
     </section>

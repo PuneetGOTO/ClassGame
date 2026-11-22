@@ -5,16 +5,17 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import { Server } from "socket.io";
 import { z } from "zod";
-import { GAMES, gameById } from "../../../packages/shared/catalog";
+import { GAMES, gameById, PLAYER_LIMIT } from "../../../packages/shared/catalog";
 import {
   type Ack, type ClientEvents, type ServerEvents, floorSchema, hostIdSchema, inputSchema, keySchema, nameSchema, registrationSchema,
-  sessionIdSchema, stationIdSchema, stationQrSchema, teamIdSchema
+  sessionIdSchema, stationIdSchema, stationQrSchema, studentLoginSchema, studentNumberSchema, teamIdSchema
 } from "../../../packages/shared/protocol";
 import type { PluginFactory } from "../../../packages/game-sdk";
 import { HOST_SCREEN_VERSION } from "../../../packages/shared/rules";
 import { Campus, type PeerData } from "./campus";
 import { entryUrl, hostKey, matchesSecret, webOrigin, type Configuration } from "./config";
 import { Practice } from "./practice";
+import { newStudentCode } from "./student-codes";
 import { RequestError, Store } from "./store";
 
 const maxMapBytes = 1_500_000;
@@ -24,6 +25,13 @@ const stationSettings = z.object({
 });
 const stationAction = z.object({ action: z.enum(["start", "stop", "reset", "clear-queue"]) });
 const mapBody = z.object({ image: z.string().max(2_010_000).nullable() });
+const newStudentSchema = registrationSchema.extend({ studentNumber: studentNumberSchema });
+const competitionIdSchema = z.coerce.number().int().positive();
+const resetSchema = z.object({
+  confirm: z.literal("RESET"),
+  competitionId: competitionIdSchema.optional(),
+  reason: z.string().trim().min(1).max(160).optional()
+}).refine(value => value.competitionId === undefined || value.reason !== undefined);
 function validation<T>(schema: z.ZodType<T>, body: unknown): T {
   const value = schema.safeParse(body);
   if (!value.success) throw new RequestError("資料格式有誤，請確認輸入內容", "validation");
@@ -103,12 +111,36 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
   const interval = options.autoTick === false ? undefined : setInterval(refresh, 80);
 
   const registrationLimits = new Map<string, { until: number; count: number }>();
+  const loginLimits = new Map<string, { until: number; count: number }>();
+  function limitStudentLogin(key: string, maximum: number) {
+    const current = now();
+    if (loginLimits.size > 500) {
+      for (const [id, limit] of loginLimits) if (limit.until <= current) loginLimits.delete(id);
+    }
+    let limit = loginLimits.get(key);
+    if (!limit || limit.until <= current) {
+      limit = { count: 0, until: current + 60_000 };
+      loginLimits.set(key, limit);
+    }
+    if (++limit.count > maximum) throw new RequestError("登入嘗試太頻繁，請稍候一分鐘再試", "login-rate", 429);
+  }
+  let pendingStudentLogins = 0;
   io.on("connection", socket => {
     campus.mark();
     let attempts = 0;
     let eventWindow = now();
     let events = 0;
-    const accept = <T, R>(schema: z.ZodType<T>, body: unknown, ack: ((data: Ack<R>) => void) | undefined, run: (payload: T) => R) => {
+    const accept = <T, R>(schema: z.ZodType<T>, body: unknown, ack: ((data: Ack<R>) => void) | undefined, run: (payload: T) => R | Promise<R>) => {
+      function respond(result: R) {
+        if (typeof ack === "function") ack({ ok: true, data: result });
+      }
+      function reject(error: unknown) {
+        if (!(error instanceof RequestError)) campus.recordError(error, "socket " + socket.id);
+        const value = errorValue(error);
+        if (typeof ack === "function") ack({ ok: false, ...value });
+        else if (!["rate", "not-running", "answer-cooldown"].includes(value.code)) socket.emit("system:error", value);
+        if (error instanceof RequestError && error.status === 401 && ++attempts > 8) socket.disconnect(true);
+      }
       try {
         const timestamp = now();
         if (timestamp - eventWindow >= 1000) {
@@ -117,14 +149,9 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
         }
         if (++events > 45) throw new RequestError("事件太密集，請稍後再試", "rate", 429);
         const result = run(validation(schema, body));
-        if (typeof ack === "function") ack({ ok: true, data: result });
-      } catch (error) {
-        if (!(error instanceof RequestError)) campus.recordError(error, "socket " + socket.id);
-        const value = errorValue(error);
-        if (typeof ack === "function") ack({ ok: false, ...value });
-        else if (!["rate", "not-running", "answer-cooldown"].includes(value.code)) socket.emit("system:error", value);
-        if (error instanceof RequestError && error.status === 401 && ++attempts > 8) socket.disconnect(true);
-      }
+        if (result instanceof Promise) void result.then(respond, reject);
+        else respond(result);
+      } catch (error) { reject(error); }
     };
 
     socket.on("campus:watch", (body, ack) => accept(z.null(), body, ack, () => {
@@ -147,6 +174,17 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
       return campus.joinPlayer(socket, data.name, data.teamId);
     }));
     socket.on("player:reconnect", (body, ack) => accept(z.object({ token: keySchema }), body, ack, data => campus.reconnect(socket, data.token)));
+    socket.on("player:login", (body, ack) => accept(studentLoginSchema, body, ack, async ({ studentNumber, code }) => {
+      if (pendingStudentLogins >= 60) throw new RequestError("登入人數較多，請稍後再試", "login-rate", 429);
+      limitStudentLogin("ip:" + socket.handshake.address, 180);
+      limitStudentLogin("student:" + studentNumber, 8);
+      pendingStudentLogins++;
+      try {
+        const result = await campus.loginStudent(socket, studentNumber, code);
+        loginLimits.delete("student:" + studentNumber);
+        return result;
+      } finally { pendingStudentLogins--; }
+    }));
     socket.on("player:leave", (body, ack) => accept(z.null(), body, ack, () => { campus.leavePlayer(socket); return null; }));
     socket.on("team:join", (body, ack) => accept(z.object({ teamId: teamIdSchema }), body, ack,
       data => campus.changeTeam(campus.playerId(socket), data.teamId)));
@@ -216,31 +254,90 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
   });
   app.use("/api/admin", admin);
   const send = <T>(res: express.Response, data: T) => { res.json({ ok: true, data }); };
+  const issueStudentCode = () => newStudentCode(config.hostSecret);
+  async function createStudents(players: z.output<typeof newStudentSchema>[]) {
+    const credentials = await Promise.all(players.map(issueStudentCode));
+    const ids = store.addStudents(players.map((player, index) => ({ ...player, digest: credentials[index].digest })), now());
+    campus.mark();
+    return ids.map((id, index) => ({
+      id, name: players[index].name, studentNumber: players[index].studentNumber, code: credentials[index].code
+    }));
+  }
+  function selectedCompetition(raw: unknown) {
+    const id = raw === undefined || raw === "" ? store.competitionId : validation(competitionIdSchema, raw);
+    if (!store.get("SELECT 1 FROM competitions WHERE id=?", id)) throw new RequestError("找不到這一屆比賽", "not-found", 404);
+    return id;
+  }
   admin.get("/state", (_req, res) => send(res, campus.adminView()));
+  admin.get("/leaderboard", (req, res) => send(res, store.leaderboard(selectedCompetition(req.query.competition))));
   admin.get("/practice", (_req, res) => send(res, { screenKey: practice.key("screen") }));
   admin.get("/hosts/:id/key", (req, res) => {
     const id = validation(hostIdSchema, req.params.id);
     send(res, { key: hostKey(config.hostSecret, id) });
   });
-  admin.post("/players", (req, res) => {
-    const { name, teamId } = validation(registrationSchema, req.body);
+  admin.post("/players", async (req, res) => {
+    const { name, teamId, studentNumber } = validation(newStudentSchema.partial({ studentNumber: true }), req.body);
+    if (studentNumber) {
+      const [credential] = await createStudents([{ name, teamId, studentNumber }]);
+      send(res, credential);
+      return;
+    }
     const player = store.addPlayer(name, teamId, now());
     store.audit("player.create", player.id, now());
     campus.mark();
     send(res, player);
   });
-  admin.patch("/players/:id", (req, res) => {
+  admin.post("/players/import", async (req, res) => {
+    const { students } = validation(z.object({ students: z.array(newStudentSchema).min(1).max(PLAYER_LIMIT) }), req.body);
+    send(res, await createStudents(students));
+  });
+  admin.patch("/players/:id", async (req, res) => {
     const id = validation(z.uuid(), req.params.id);
-    if (!store.player(id)) throw new RequestError("找不到玩家", "not-found", 404);
-    const body = validation(z.object({ name: nameSchema.optional(), teamId: teamIdSchema.optional(), swapId: z.uuid().optional() }), req.body);
-    if (body.name && body.teamId) throw new RequestError("請分開變更名稱與隊伍");
-    if (body.name) {
-      store.renamePlayer(id, body.name);
-      store.audit("player.rename", id, now());
+    const player = store.player(id);
+    if (!player) throw new RequestError("找不到玩家", "not-found", 404);
+    const body = validation(z.object({
+      name: nameSchema.optional(), studentNumber: studentNumberSchema.optional(), teamId: teamIdSchema.optional(), swapId: z.uuid().optional()
+    }), req.body);
+    if ((body.name || body.studentNumber) && body.teamId) throw new RequestError("請分開變更帳號資料與隊伍");
+    if (body.studentNumber && body.studentNumber !== player.student_no) {
+      const { code, digest } = await issueStudentCode();
+      const name = store.updatePlayerIdentity(id, body.name, { studentNumber: body.studentNumber, digest }, now());
+      loginLimits.delete("student:" + body.studentNumber);
+      campus.disconnectPlayerAccount(id, "學號已更新，請使用新的登入碼");
+      send(res, { id, name, studentNumber: body.studentNumber, code });
+      return;
     }
+    if (body.name) store.updatePlayerIdentity(id, body.name, undefined, now());
     if (body.teamId) campus.changeTeam(id, body.teamId, body.swapId, true);
     campus.mark();
     send(res, null);
+  });
+  admin.post("/players/:id/code", async (req, res) => {
+    const id = validation(z.uuid(), req.params.id);
+    const { code, digest } = await issueStudentCode();
+    const player = store.player(id);
+    if (!player) throw new RequestError("找不到玩家", "not-found", 404);
+    const studentNumber = player.student_no;
+    if (!studentNumber) throw new RequestError("請先為玩家綁定學號", "no-student-number", 409);
+    const name = store.updatePlayerIdentity(id, undefined, { studentNumber, digest }, now());
+    loginLimits.delete("student:" + studentNumber);
+    campus.disconnectPlayerAccount(id, "登入碼已更新，請使用新的登入碼");
+    send(res, { id, name, studentNumber, code });
+  });
+  admin.put("/players/:id/status", (req, res) => {
+    const id = validation(z.uuid(), req.params.id);
+    const { suspended } = validation(z.object({ suspended: z.boolean() }), req.body);
+    campus.suspendPlayer(id, suspended);
+    send(res, null);
+  });
+  admin.put("/registration", (req, res) => {
+    const { open } = validation(z.object({ open: z.boolean() }), req.body);
+    store.transaction(() => {
+      const changed = store.run("UPDATE settings SET self_registration=? WHERE self_registration<>?", Number(open), Number(open));
+      if (changed.changes) store.audit("settings.registration", open ? "開放暱稱登記" : "關閉暱稱登記", now());
+    });
+    campus.mark();
+    send(res, { open });
   });
   admin.get("/players/:id/results", (req, res) => {
     const id = validation(z.uuid(), req.params.id);
@@ -282,8 +379,8 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
     send(res, campus.voidResult(id, reason));
   });
   admin.post("/competition/reset", (req, res) => {
-    validation(z.object({ confirm: z.literal("RESET") }), req.body);
-    campus.resetCompetition();
+    const { competitionId, reason } = validation(resetSchema, req.body);
+    campus.resetCompetition(reason, competitionId);
     send(res, { competitionId: store.competitionId });
   });
   admin.put("/map/:floor", (req, res) => {
@@ -307,9 +404,11 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
     send(res, { doubleChance });
   });
   admin.get("/scores.csv", (req, res) => {
-    const leaderboard = store.leaderboard();
+    const competitionId = selectedCompetition(req.query.competition);
+    const leaderboard = store.leaderboard(competitionId);
+    const suffix = competitionId === store.competitionId ? "" : "-edition-" + competitionId;
     if (req.query.scope === "teams") {
-      sendCsv(res, "campus-teams.csv", [
+      sendCsv(res, "campus-teams" + suffix + ".csv", [
         ["名次", "隊伍ID", "隊伍", "五人平均分", "完成", "勝", "成員"],
         ...leaderboard.teams.map(team => [team.rank, team.id, team.name, team.score, team.completed, team.wins,
           team.members.map(member => member.name).join("、")])
@@ -322,7 +421,7 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
         ...GAMES.map(game => game.name + " 雙倍挑戰")]
     ];
     for (const player of leaderboard.players) {
-      const results = new Map(store.officialFor(player.id).map(result => [result.gameId, result]));
+      const results = new Map(store.officialFor(player.id, competitionId).map(result => [result.gameId, result]));
       rows.push([player.rank, player.id, player.name, player.teamName, player.completed, player.wins, player.ties, player.losses,
         player.soloScore, player.multiScore, player.totalScore,
         ...GAMES.map(game => {
@@ -332,7 +431,7 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
         ...GAMES.map(game => results.get(game.id)?.awarded ?? 0),
         ...GAMES.map(game => results.get(game.id)?.doublePoints ? "是" : "")]);
     }
-    sendCsv(res, "campus-scores.csv", rows);
+    sendCsv(res, "campus-scores" + suffix + ".csv", rows);
   });
   app.use("/api", (_req, res) => { res.status(404).json({ ok: false, error: "找不到 API", code: "not-found" }); });
   if (config.staticRoot && existsSync(join(config.staticRoot, "index.html"))) {
