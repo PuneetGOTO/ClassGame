@@ -1,74 +1,68 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GAMES, STATION_COUNT, fixedId } from "../packages/shared/catalog";
-import { routePoints, routeTier } from "../packages/shared/route";
-import { harness, ok, send } from "./socket-helper";
+import { GAMES, fixedId } from "../packages/shared/catalog";
+import { ROUTE_LENGTH, routeTier } from "../packages/shared/route";
+import { selectMatch, type Candidate } from "../apps/server/src/matchmaking";
+import { harness, send } from "./socket-helper";
 
-test("a randomly assigned course takes exactly 20 played games with one floor change and no skips", async () => {
+test("matchmaking leaves a pair for the next room and prioritizes compatible unplayed games", () => {
+  const waiting: Candidate[] = Array.from({ length: 5 }, (_, index) => ({
+    id: String(index), step: 2, queuedAt: 0, games: new Set(["game-01"]), lastFloor: 3
+  }));
+  const rooms = [
+    { id: "STATION-01", gameId: "game-01", floor: 3 },
+    { id: "STATION-02", gameId: "game-02", floor: 3 },
+    { id: "STATION-11", gameId: "game-11", floor: 4 }
+  ] as const;
+  const first = selectMatch(waiting, [...rooms], 10_000)!;
+  assert.equal(first.players.length, 3);
+  assert.equal(first.stationId, "STATION-02");
+  const second = selectMatch(waiting.filter(player => !first.players.includes(player)),
+    rooms.filter(room => room.id !== first.stationId), 10_000)!;
+  assert.equal(second.players.length, 2);
+  assert.equal(second.stationId, "STATION-11");
+  const levels = waiting.slice(0, 4).map((player, index) => ({ ...player, step: index === 3 ? 6 : 2 }));
+  assert.equal(selectMatch(levels, [...rooms], 3000), undefined);
+  assert.equal(selectMatch(levels, [...rooms], 10_000)?.players.length, 4);
+});
+
+test("two players complete ten different randomly assigned stations and always use their current room code", async () => {
   const service = await harness();
   try {
     await Promise.all(GAMES.map((_game, i) => service.host(fixedId("HOST", i + 1))));
-    const player = await service.player("二十關全程");
-    const teammate = await service.player("同隊不同路線", "TEAM-01");
-    assert.equal(player.state.player.teamId, teammate.state.player.teamId);
-    assert.notEqual(player.state.route.next?.stationId, teammate.state.route.next?.stationId);
-    assert.ok(!JSON.stringify(player.state.route).includes("seed"));
-    assert.deepEqual(Object.keys(player.state.route).sort(), ["completed", "next"]);
-    const floors: number[] = [];
-    const games: string[] = [];
-    let score = 0;
-    for (let step = 1; step <= STATION_COUNT; step++) {
-      service.step(5000);
-      const state = service.campus.playerView(player.id);
-      assert.equal(state.route.completed, step - 1);
-      assert.equal(state.player.totalScore, score);
-      const next = state.route.next!;
-      assert.equal(next.step, step);
-      assert.equal(next.tier, routeTier(step));
-      games.push(next.gameId);
-      const station = service.store.stationRows().find(item => item.id === next.stationId)!;
-      assert.equal(station.gameId, next.gameId);
-      floors.push(station.floor);
-      const lobby = await service.joinStation(player.socket, next.stationId);
-      const sessionId = lobby.room!.id;
-      const countdown = await ok(player.socket, "game:ready", { sessionId, ready: true });
-      assert.equal(countdown.room!.deadline! - countdown.room!.startedAt!, 60_000);
-      service.step(3000);
-      const own = service.campus.playerView(player.id).room!;
-      assert.equal(own.members.length, 1);
-      assert.deepEqual(own.course, { step, tier: next.tier });
-      assert.ok(own.scene);
-      assert.equal(service.campus.hostView(station.hostId).room?.scene, null);
-      assert.equal(service.campus.playerView(teammate.id).room, null);
+    const a = await service.player("十關甲");
+    const b = await service.player("十關乙");
+    assert.deepEqual(a.state.route, { completed: 0, searching: false, next: null });
+    const played = new Set<string>();
+    for (let step = 1; step <= ROUTE_LENGTH; step++) {
+      const lobby = await service.match([a,b]);
+      const view = service.campus.playerView(a.id);
+      assert.equal(view.route.completed, step - 1);
+      assert.equal(view.route.next?.step, step);
+      assert.equal(view.route.next?.tier, routeTier(step));
+      assert.equal(played.has(lobby.gameId), false);
+      played.add(lobby.gameId);
       if (step === 1) {
-        const wrong = await service.attemptStation(player.socket, teammate.state.route.next!.stationId);
+        const other = service.store.stationRows().find(station => station.id !== lobby.stationId)!;
+        const wrong = await service.attemptStation(a.socket, other.id);
         assert.ok(!wrong.ok && wrong.code === "wrong-route");
-        const wronglyJoined = await service.attemptStation(teammate.socket, next.stationId);
-        assert.ok(!wronglyJoined.ok && wronglyJoined.code === "wrong-route");
       }
-      const ended = new Promise(resolve => player.socket.once("game:timeout", resolve));
-      await service.operate(player.socket, player.id);
+      await service.begin([a,b], lobby.stationId);
+      await service.operate(a.socket, a.id);
+      await service.operate(b.socket, b.id);
       service.step(60_000);
-      await ended;
-      score += routePoints(next.tier).loss;
-      assert.equal(service.campus.playerView(player.id).lastResult?.awarded, routePoints(next.tier).loss);
+      const results = service.store.resultsForSession(lobby.id);
+      assert.equal(results.length, 2);
+      assert.ok(results.every(result => result.step === step && result.baseAwarded >= routeTier(step)));
     }
-    assert.equal(new Set(games).size, 20);
-    assert.equal(floors.filter((floor, index) => index > 0 && floor !== floors[index - 1]).length, 1);
-    const final = service.campus.playerView(player.id);
-    assert.deepEqual(final.route, { completed: 20, next: null });
-    assert.equal(final.player.totalScore, 50);
-    assert.equal(final.results.length, 20);
-    assert.equal(service.campus.playerView(teammate.id).route.completed, 0);
-    const replay = await service.attemptStation(player.socket, player.state.route.next!.stationId);
-    assert.ok(!replay.ok && replay.code === "course-complete");
-    const duplicate = await send(player.socket, "game:input", {
-      sessionId: final.lastResult!.sessionId, seq: 1000, action: { kind: "move", direction: "up" }
-    });
-    assert.ok(!duplicate.ok && duplicate.code === "wrong-session");
-    assert.equal(service.store.leaderboard().players[0].totalScore, 50);
-  } finally {
-    await service.close();
-  }
+    assert.equal(played.size, 10);
+    for (const player of [a,b]) {
+      const state = service.campus.playerView(player.id);
+      assert.deepEqual(state.route, { completed: 10, searching: false, next: null });
+      assert.equal(state.results.length, 10);
+      assert.equal(service.store.playedGames(player.id).length, 10);
+      const again = await send(player.socket, "match:find", null);
+      assert.ok(!again.ok && again.code === "course-complete");
+    }
+  } finally { await service.close(); }
 });
-

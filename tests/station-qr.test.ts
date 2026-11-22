@@ -2,78 +2,78 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { STATION_QR_MS, STATION_SCAN_GRANT_MS } from "../packages/shared/rules";
 import type { StationEntry } from "../packages/shared/protocol";
-import { harness, ok, scanCode, send } from "./socket-helper";
+import { hostKey } from "../apps/server/src/config";
+import { credentials, harness, ok, scanCode, send } from "./socket-helper";
 
-test("room codes rotate after ten seconds, reject other rooms, and preserve a valid guest scan through registration", async () => {
+test("ten-second codes are room-bound and a valid fresh QR checks in only assigned players", async () => {
   const service = await harness();
   try {
     const host = await service.host("HOST-01");
-    await service.host("HOST-02");
+    const a = await service.player("手機甲");
+    const b = await service.player("手機乙");
+    const older = await service.connect();
+    const staleScreen = await send(older, "host:register", {
+      hostId: "HOST-02", key: hostKey(credentials.hostSecret, "HOST-02"), entryOrigin: service.origin
+    });
+    assert.ok(!staleScreen.ok && staleScreen.code === "host-refresh");
+    assert.equal(service.campus.hostView("HOST-02").station.online, false);
     const first = "STATION-01";
+    const lobby = await service.match([a,b]);
+    assert.equal(lobby.stationId, first);
+    await service.host("HOST-02");
+    service.step(10_000 - (service.time() % 10_000));
     const second = "STATION-02";
-    const phone = await service.connect();
     const observer = await service.connect();
     let exposed = false;
     observer.on("host:entry", () => { exposed = true; });
     const summary = await ok(observer,"campus:watch",null);
     assert.equal("entry" in summary.stations[0],false);
-
     const initial = service.campus.hostView("HOST-01").entry!;
     const other = service.campus.hostView("HOST-02").entry!;
-    assert.equal(initial.expiresAt - service.time(),STATION_QR_MS);
-    assert.equal(initial.expiresAt,other.expiresAt);
-    assert.notEqual(scanCode(initial.url),scanCode(other.url));
-    const wrongRoom = await send(phone,"station:scan",{ stationId: second,code: scanCode(initial.url) });
-    assert.ok(!wrongRoom.ok && wrongRoom.code === "qr-invalid");
+    assert.equal(initial.expiresAt - service.time(), STATION_QR_MS);
+    assert.equal(initial.expiresAt, other.expiresAt);
+    assert.notEqual(scanCode(initial.url), scanCode(other.url));
+    const badCode = await send(a.socket,"station:scan",{ stationId: second, code: scanCode(initial.url) });
+    assert.ok(!badCode.ok && badCode.code === "qr-invalid");
+    const wrong = await service.attemptStation(a.socket,second);
+    assert.ok(!wrong.ok && wrong.code === "wrong-route");
+    const unscanned = await send(a.socket,"station:join",{ stationId:first });
+    assert.ok(!unscanned.ok && unscanned.code === "scan-required");
 
     service.step(STATION_QR_MS-1);
-    await ok(phone,"station:scan",{ stationId: first,code: scanCode(initial.url) });
+    await ok(a.socket,"station:scan",{ stationId:first, code:scanCode(initial.url) });
     const rotation = new Promise<StationEntry|null>(resolve => host.once("host:entry",resolve));
     service.step(1);
     const updated = await rotation;
-    assert.equal(updated?.expiresAt,initial.expiresAt+STATION_QR_MS);
     assert.notEqual(scanCode(updated!.url),scanCode(initial.url));
     assert.equal(exposed,false);
-
-    const { state } = await ok(phone,"player:join",{ name: "進場玩家" });
-    service.fixtureRoute(state.player.id, "game-01");
-    const staticLink = await send(phone,"station:join",{ stationId: second });
-    assert.ok(!staticLink.ok && staticLink.code === "scan-required");
-    const guestScan = await ok(phone,"station:join",{ stationId: first });
-    assert.equal(guestScan.room?.stationId,first);
-    await ok(phone,"station:leave",null);
-    const validWrongRoom = await service.attemptStation(phone,second);
-    assert.ok(!validWrongRoom.ok && validWrongRoom.code === "wrong-route");
-    const reused = await send(phone,"station:join",{ stationId: first });
-    assert.ok(!reused.ok && reused.code === "scan-required");
-    const expired = await send(phone,"station:scan",{ stationId: first,code: scanCode(initial.url) });
+    const expired = await send(b.socket,"station:scan",{ stationId:first, code:scanCode(initial.url) });
     assert.ok(!expired.ok && expired.code === "qr-expired");
-    const rescan = await service.joinStation(phone,first);
-    assert.equal(rescan.player.id,state.player.id);
-    assert.equal(rescan.room?.stationId,first);
+
+    const admitted = await ok(a.socket,"station:join",{ stationId:first });
+    assert.equal(admitted.room?.members.find(member => member.id === a.id)?.checkedIn, true);
+    const secondSeat = await service.joinStation(b.socket,first);
+    assert.equal(secondSeat.room?.members.filter(member => member.checkedIn).length, 2);
   } finally { await service.close(); }
 });
 
-test("a scan is bound to the current host and expires before delayed admission", async () => {
+test("a valid scan grant is tied to its host connection and expires", async () => {
   const service = await harness();
   try {
     await service.host("HOST-01");
-    const player = await service.player("短效入場");
-    service.fixtureRoute(player.id, "game-01");
-    const stationId = "STATION-01";
+    const a = await service.player("短效入場");
+    const b = await service.player("對手");
+    const { stationId } = await service.match([a,b]);
     const code = service.stationCode(stationId);
-    await ok(player.socket,"station:scan",{ stationId,code });
-
+    await ok(a.socket,"station:scan",{ stationId,code });
     await service.host("HOST-01");
-    const superseded = await send(player.socket,"station:scan",{ stationId,code });
+    const superseded = await send(a.socket,"station:scan",{ stationId,code });
     assert.ok(!superseded.ok && superseded.code === "qr-invalid");
-    const hostChanged = await send(player.socket,"station:join",{ stationId });
+    const hostChanged = await send(a.socket,"station:join",{ stationId });
     assert.ok(!hostChanged.ok && hostChanged.code === "scan-required");
-
-    await ok(player.socket,"station:scan",{ stationId,code: service.stationCode(stationId) });
+    await ok(a.socket,"station:scan",{ stationId,code: service.stationCode(stationId) });
     service.step(STATION_SCAN_GRANT_MS);
-    const tooLate = await send(player.socket,"station:join",{ stationId });
+    const tooLate = await send(a.socket,"station:join",{ stationId });
     assert.ok(!tooLate.ok && tooLate.code === "scan-required");
   } finally { await service.close(); }
 });
-

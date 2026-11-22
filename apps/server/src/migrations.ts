@@ -1,7 +1,7 @@
 import { fixedId } from "../../../packages/shared/catalog";
 import { FLOORS, floorPlanFrame, originalFloorStations, originalPhotoSize } from "../../../packages/shared/floors";
 import { DEFAULT_DOUBLE_CHANCE, DOUBLE_START_MS, DOUBLE_END_MS } from "../../../packages/shared/rules";
-import { ROUTE_LENGTH, ROUTE_TIER_SIZE } from "../../../packages/shared/route";
+import { LEGACY_ROUTE_LENGTH, LEGACY_TIER_SIZE, ROUTE_LENGTH } from "../../../packages/shared/route";
 
 export const migrations = [{
   version: 1,
@@ -220,7 +220,7 @@ ALTER TABLE competitions ADD COLUMN play_format TEXT NOT NULL DEFAULT 'legacy' C
 CREATE TABLE player_routes (
   competition_id INTEGER NOT NULL REFERENCES competitions(id),
   player_id TEXT NOT NULL REFERENCES players(player_id),
-  step INTEGER NOT NULL CHECK (step BETWEEN 1 AND ${ROUTE_LENGTH}),
+  step INTEGER NOT NULL CHECK (step BETWEEN 1 AND ${LEGACY_ROUTE_LENGTH}),
   game_id TEXT NOT NULL REFERENCES games(game_id),
   seed INTEGER NOT NULL,
   double_offset INTEGER CHECK (double_offset = -1 OR double_offset BETWEEN ${DOUBLE_START_MS} AND ${DOUBLE_END_MS}),
@@ -229,13 +229,13 @@ CREATE TABLE player_routes (
   UNIQUE (competition_id, game_id, seed)
 ) STRICT;
 CREATE INDEX route_first_rooms ON player_routes(competition_id, step, game_id);
-ALTER TABLE game_sessions ADD COLUMN route_step INTEGER NOT NULL DEFAULT 0 CHECK (route_step BETWEEN 0 AND ${ROUTE_LENGTH});
+ALTER TABLE game_sessions ADD COLUMN route_step INTEGER NOT NULL DEFAULT 0 CHECK (route_step BETWEEN 0 AND ${LEGACY_ROUTE_LENGTH});
 ALTER TABLE session_members ADD COLUMN played INTEGER NOT NULL DEFAULT 0 CHECK (played IN (0,1));
-ALTER TABLE game_results ADD COLUMN route_step INTEGER NOT NULL DEFAULT 0 CHECK (route_step BETWEEN 0 AND ${ROUTE_LENGTH});
+ALTER TABLE game_results ADD COLUMN route_step INTEGER NOT NULL DEFAULT 0 CHECK (route_step BETWEEN 0 AND ${LEGACY_ROUTE_LENGTH});
 CREATE UNIQUE INDEX one_result_per_route_step ON game_results (competition_id, player_id, route_step)
   WHERE participated = 1 AND route_step > 0;
 ALTER TABLE game_results ADD COLUMN score_weight INTEGER GENERATED ALWAYS AS (
-  CASE WHEN route_step=0 THEN 1 ELSE 1+(route_step-1)/${ROUTE_TIER_SIZE} END
+  CASE WHEN route_step=0 THEN 1 ELSE 1+(route_step-1)/${LEGACY_TIER_SIZE} END
 ) VIRTUAL;
 ALTER TABLE game_results DROP COLUMN awarded_points;
 ALTER TABLE game_results ADD COLUMN awarded_points REAL GENERATED ALWAYS AS
@@ -258,6 +258,32 @@ WITH numbered AS (
 )
 UPDATE hosts SET assigned_game_id=(SELECT unused.game_id FROM extras JOIN unused USING(n) WHERE extras.host_id=hosts.host_id)
 WHERE host_id IN(SELECT host_id FROM extras);
+`
+}, {
+  version: 6,
+  sql: `
+CREATE TABLE match_search (
+  player_id TEXT PRIMARY KEY REFERENCES players(player_id),
+  queued_at INTEGER NOT NULL
+) STRICT;
+ALTER TABLE game_sessions ADD COLUMN match_tier INTEGER NOT NULL DEFAULT 0 CHECK (match_tier BETWEEN 0 AND 4);
+ALTER TABLE game_sessions ADD COLUMN winner_side INTEGER CHECK (winner_side BETWEEN 0 AND 2);
+ALTER TABLE session_members ADD COLUMN checked_in INTEGER NOT NULL DEFAULT 0 CHECK (checked_in IN (0,1));
+ALTER TABLE session_members ADD COLUMN side INTEGER CHECK (side BETWEEN 0 AND 2);
+ALTER TABLE session_members ADD COLUMN route_step INTEGER NOT NULL DEFAULT 0 CHECK (route_step BETWEEN 0 AND ${ROUTE_LENGTH});
+ALTER TABLE game_results ADD COLUMN match_weight INTEGER NOT NULL DEFAULT 0 CHECK (match_weight BETWEEN 0 AND 4);
+ALTER TABLE game_results DROP COLUMN awarded_points;
+ALTER TABLE game_results DROP COLUMN score_weight;
+ALTER TABLE game_results ADD COLUMN score_weight INTEGER GENERATED ALWAYS AS (
+  CASE WHEN match_weight>0 THEN match_weight WHEN route_step=0 THEN 1 ELSE 1+(route_step-1)/${LEGACY_TIER_SIZE} END
+) VIRTUAL;
+ALTER TABLE game_results ADD COLUMN awarded_points REAL GENERATED ALWAYS AS
+  ((awarded_units + adjustment_units) * score_weight / 5.0) VIRTUAL;
+
+UPDATE game_sessions SET status='cancelled', reason='reset',
+  ended_at=COALESCE(ended_at, CAST(unixepoch('subsec') * 1000 AS INTEGER))
+WHERE status IN ('lobby','countdown','running');
+DELETE FROM station_queue;
 `
 }];
 

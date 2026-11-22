@@ -1,71 +1,114 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { GAMES } from "../packages/shared/catalog";
 import type { Action, Board, Quiz } from "../packages/shared/protocol";
-import { harness, ok, send } from "./socket-helper";
-import { arithmetic, move, shortest, solvePipes, solveSokoban } from "./solve";
+import { Arena } from "../apps/server/src/arena";
+import { plugins } from "../local-games/registry";
+import { harness, send } from "./socket-helper";
+import { arithmetic, directions, move, shortest, solvePipes, solveSokoban } from "./solve";
 
-test("the five priority games can be won through the player's WebSocket and keep the screen private", async () => {
+function answer(scene: Quiz, action: Action): Action {
+  assert.equal(action.kind, "answer");
+  if (!scene.prompt?.options) return action;
+  const index = scene.prompt.options.findIndex(option => option.value === action.value);
+  assert.ok(index >= 0);
+  return { kind: "choice", questionId: action.questionId, index };
+}
+
+test("each of the 20 plugins supplies symmetric but independently controlled side boards", () => {
+  for (const game of GAMES) {
+    const match = new Arena(plugins.get(game.id)!, game.id, 57, 2, [0, 1, 0, 1]);
+    match.start();
+    const first = match.panel(0);
+    const opponent = match.panel(1);
+    assert.ok(first.scene, game.name);
+    assert.deepEqual(opponent.scene, first.scene, game.name);
+    if (first.scene.kind === "quiz") assert.equal(JSON.stringify(match.remote(0)).includes("text"), false, game.name);
+    else assert.deepEqual(match.remote(0), {}, game.name);
+    assert.equal(match.input(0, { kind: "cell", index: 0 }, 0, 0).changed, false);
+    const restored = new Arena(plugins.get(game.id)!, game.id, 57, 2, [0, 1], match.serialize());
+    assert.deepEqual(restored.panel(0), first);
+    assert.deepEqual(restored.panel(1), opponent);
+  }
+});
+
+for (const number of ["01","03","10","14","18"]) test("HOST-" + number + " accepts controller inputs and settles a winner", async () => {
   const service = await harness();
   try {
-    const player = await service.player("個人闖關");
-    const games = ["01", "03", "10", "14", "18"];
-    service.fixtureRoute(player.id, ...games.map(number => "game-" + number));
-    for (const [index, number] of games.entries()) {
-      const screen = await service.host("HOST-" + number);
-      const station = "STATION-" + number;
-      const lobby = await service.joinStation(player.socket, station);
-      const sessionId = lobby.room!.id;
-      const started = new Promise<void>(resolve => screen.once("game:start", view => {
-        assert.equal(view.id, sessionId);
-        assert.deepEqual(view.course, { step: index + 1, tier: 1 });
-        resolve();
-      }));
-      await ok(player.socket, "game:ready", { sessionId, ready: true });
-      await started;
-      service.step(3000);
-      const room = () => service.campus.playerView(player.id).room!;
-      assert.equal(room().members.length, 1);
-      assert.equal(service.campus.hostView("HOST-" + number).room?.scene, null);
-      assert.ok(service.campus.hostView("HOST-" + number).room?.progress);
-      const input = async (action: Action) => {
-        service.step(95);
-        await ok(player.socket, "game:input", { sessionId, seq: room().seq + 1, action });
-      };
-      const score = new Promise<void>(resolve => screen.once("score:result", result => {
-        assert.equal(result.sessionId, sessionId);
-        assert.equal(result.outcome, "win");
-        resolve();
-      }));
-      if (number === "01") {
-        for (const action of solveSokoban(room().scene as Board)) await input(action);
-      } else if (number === "03") {
-        for (const action of solvePipes(room().scene as Board)) await input(action);
-      } else if (number === "14") {
-        const board = room().scene as Board;
-        const from = board.tiles.findIndex(tile => tile.kind === "player");
-        const item = board.tiles.findIndex(tile => tile.kind === "crystal");
-        const exit = board.tiles.findIndex(tile => tile.kind === "exit");
-        for (const direction of [...shortest(board, from, item), ...shortest(board, item, exit)]) await input(move(direction));
-      } else {
-        const view = () => room().scene as Quiz;
-        const goal = room().progress!.target;
-        const first = arithmetic(view().prompt!);
-        await input(first);
-        await ok(player.socket, "game:input", { sessionId, seq: 1, action: first });
-        assert.equal(view().correct, 1);
-        assert.equal("solution" in view().prompt!, false);
-        for (let i = 1; i < goal; i++) await input(arithmetic(view().prompt!));
+    const a = await service.player("挑戰者");
+    const b = await service.player("對手");
+    const host = await service.host("HOST-" + number);
+    const lobby = await service.match([a,b]);
+    await service.begin([a,b], lobby.stationId);
+    const room = () => service.campus.playerView(a.id).room!;
+    assert.equal(room().scene, null);
+    assert.equal(room().match!.panels, undefined);
+    const unauthorized = await send(host, "game:input", { sessionId: lobby.id, seq: 1, action: move("up") });
+    assert.ok(!unauthorized.ok);
+    await service.operate(b.socket, b.id);
+    const otherBoard = service.panel(b.id).scene;
+    const side = room().members.find(member => member.id === a.id)!.side;
+    const screen = () => service.panel(a.id).scene!;
+    const input = async (action: Action) => {
+      service.step(90);
+      await service.control(a, action);
+    };
+    if (number === "01") {
+      for (const action of solveSokoban(screen() as Board)) await input(action);
+    } else if (number === "03") {
+      const board = screen() as Board;
+      for (const action of solvePipes(board)) {
+        assert.equal(action.kind, "cell");
+        const path = shortest(board, service.panel(a.id).cursor!, action.index);
+        for (const direction of path) await input({ kind: "cursor", direction });
+        await input({ kind: "action", action: "interact" });
       }
-      await score;
-      const playerView = service.campus.playerView(player.id);
-      assert.equal(playerView.route.completed, index + 1);
-      assert.equal(playerView.lastResult?.awarded, 2);
-      assert.equal(playerView.player.totalScore, (index + 1) * 2);
-      assert.equal(service.store.teamResult(sessionId), null);
-      const played = await service.attemptStation(player.socket, station);
-      assert.ok(!played.ok && played.code === "wrong-route");
-      const late = await send(player.socket, "game:input", { sessionId, seq: 999, action: move("up") });
-      assert.ok(!late.ok && late.code === "wrong-session");
+    } else if (number === "14") {
+      const board = screen() as Board;
+      const from = board.tiles.findIndex(tile => tile.kind === "player");
+      const item = board.tiles.findIndex(tile => tile.kind === "crystal");
+      const exit = board.tiles.findIndex(tile => tile.kind === "exit");
+      for (const direction of shortest(board,from,item).concat(shortest(board,item,exit))) await input(move(direction));
+    } else {
+      while (room()) {
+        const scene = screen() as Quiz;
+        await input(answer(scene, arithmetic(scene.prompt!)));
+      }
     }
+    const display = service.campus.hostView("HOST-" + number);
+    assert.equal(display.room?.status, "finished");
+    assert.equal(display.room?.match?.winner, side);
+    assert.deepEqual(display.room?.match?.panels?.find(item => item.side !== side)?.scene, otherBoard);
+    assert.deepEqual([service.campus.playerView(a.id).lastResult?.awarded, service.campus.playerView(b.id).lastResult?.awarded], [2,1]);
+  } finally { await service.close(); }
+});
+
+test("in 2 vs 2 both teammates steer the same side and only that side advances", async () => {
+  const service = await harness();
+  try {
+    await service.host("HOST-10");
+    const players = await Promise.all(Array.from({length:4}, (_,i) => service.player("對戰 " + i)));
+    const lobby = await service.match(players);
+    const room = await service.begin(players, lobby.stationId);
+    assert.equal(room.match?.mode, "doubles");
+    const blue = players.filter(player => room.members.find(member => member.id === player.id)?.side === 0);
+    const orange = players.filter(player => room.members.find(member => member.id === player.id)?.side === 1);
+    assert.equal(blue.length, 2);
+    assert.equal(orange.length, 2);
+    const snapshot = () => service.campus.hostView("HOST-10").room!.match!.panels!;
+    const orangeAnswer = (snapshot()[1].scene as Quiz).prompt!;
+    for (const player of orange) await service.control(player, { kind: "choice", questionId: service.panel(player.id).scene!.kind === "quiz"
+      ? (service.panel(player.id).scene as Quiz).prompt!.id : orangeAnswer.id, index: 0 });
+    const frozen = snapshot()[1].scene;
+    for (let i = 0; i < 4; i++) {
+      const scene = snapshot()[0].scene as Quiz;
+      await service.control(blue[i % 2], answer(scene, arithmetic(scene.prompt!)));
+      if (i < 3) assert.equal((snapshot()[0].scene as Quiz).correct,i+1);
+      assert.deepEqual(snapshot()[1].scene,frozen);
+    }
+    const results = service.store.resultsForSession(room.id);
+    assert.ok(results.filter(row => blue.some(player => player.id === row.playerId)).every(row => row.outcome === "win"));
+    assert.ok(results.filter(row => orange.some(player => player.id === row.playerId)).every(row => row.outcome === "lose"));
+    assert.equal(results.length, 4);
   } finally { await service.close(); }
 });

@@ -11,6 +11,7 @@ import {
   sessionIdSchema, stationIdSchema, stationQrSchema, teamIdSchema
 } from "../../../packages/shared/protocol";
 import type { PluginFactory } from "../../../packages/game-sdk";
+import { HOST_SCREEN_VERSION } from "../../../packages/shared/rules";
 import { Campus, type PeerData } from "./campus";
 import { entryUrl, hostKey, matchesSecret, webOrigin, type Configuration } from "./config";
 import { RequestError, Store } from "./store";
@@ -143,6 +144,8 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
     socket.on("player:leave", (body, ack) => accept(z.null(), body, ack, () => { campus.leavePlayer(socket); return null; }));
     socket.on("team:join", (body, ack) => accept(z.object({ teamId: teamIdSchema }), body, ack,
       data => campus.changeTeam(campus.playerId(socket), data.teamId)));
+    socket.on("match:find", (body, ack) => accept(z.null(), body, ack, () => campus.findMatch(campus.playerId(socket))));
+    socket.on("match:cancel", (body, ack) => accept(z.null(), body, ack, () => campus.leaveStation(campus.playerId(socket))));
     socket.on("station:scan", (body, ack) => accept(z.object({ stationId: stationIdSchema, code: stationQrSchema }), body, ack,
       data => campus.scanStation(socket, data.stationId, data.code)));
     socket.on("station:join", (body, ack) => accept(z.object({ stationId: stationIdSchema }), body, ack,
@@ -151,9 +154,14 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
     socket.on("game:ready", (body, ack) => accept(z.object({ sessionId: sessionIdSchema, ready: z.boolean() }), body, ack,
       data => campus.ready(campus.playerId(socket), data.sessionId, data.ready)));
     socket.on("game:input", (body, ack) => accept(inputSchema, body, ack, data => campus.input(campus.playerId(socket), data)));
-    socket.on("host:register", (body, ack) => accept(z.object({ hostId: hostIdSchema, key: keySchema, entryOrigin: z.string().max(200).optional() }),
+    socket.on("host:register", (body, ack) => accept(z.object({
+      hostId: hostIdSchema, key: keySchema, entryOrigin: z.string().max(200).optional(), screenVersion: z.number().int().optional()
+    }),
       body, ack, data => {
         if (!matchesSecret(data.key, hostKey(config.hostSecret, data.hostId))) throw new RequestError("主機金鑰不正確", "unauthorized", 401);
+        if (data.screenVersion !== HOST_SCREEN_VERSION) {
+          throw new RequestError("請重新整理大螢幕頁面，載入新版對戰畫面", "host-refresh", 409);
+        }
         return campus.registerHost(socket, data.hostId, webOrigin(data.entryOrigin ?? socket.handshake.headers.origin ?? ""));
       }));
     socket.on("admin:watch", (body, ack) => accept(z.object({ key: keySchema }), body, ack, data => {

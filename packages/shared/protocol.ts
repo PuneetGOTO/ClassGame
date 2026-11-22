@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { GameInfo } from "./catalog";
 import type { Floor } from "./floors";
-import type { Difficulty } from "./route";
+import type { Difficulty, MatchMode } from "./route";
 
 export const keySchema = z.string().min(16).max(150);
 export const nameSchema = z.string().trim().min(1).max(24).regex(/^[^\p{C}]+$/u, "名稱不可包含控制字元");
@@ -16,6 +16,8 @@ export const directionSchema = z.enum(["up", "down", "left", "right"]);
 
 export const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("move"), direction: directionSchema }),
+  z.object({ kind: z.literal("cursor"), direction: directionSchema }),
+  z.object({ kind: z.literal("choice"), questionId: z.number().int().positive(), index: z.number().int().min(0).max(3) }),
   z.object({ kind: z.literal("cell"), index: z.number().int().min(0).max(2_000) }),
   z.object({ kind: z.literal("action"), action: z.enum(["shoot", "jump", "duck", "interact"]) }),
   z.object({ kind: z.literal("answer"), questionId: z.number().int().nonnegative(), value: z.string().trim().min(1).max(64) })
@@ -29,7 +31,7 @@ export type Action = z.infer<typeof actionSchema>;
 export type Direction = z.infer<typeof directionSchema>;
 export type Ack<T = null> = { ok: true; data: T } | { ok: false; error: string; code: string };
 export type RoomStatus = "lobby" | "countdown" | "running" | "finished" | "cancelled";
-export type EndReason = "goal" | "timeout" | "stopped" | "forfeit" | "reset" | "lobby-expired" | "no-play" | "error";
+export type EndReason = "goal" | "timeout" | "stopped" | "forfeit" | "reset" | "lobby-expired" | "no-play" | "host-offline" | "error";
 
 export interface Progress { value: number; target: number; label: string }
 export interface GridTile {
@@ -94,6 +96,13 @@ export interface Leaderboard { players: PlayerRank[]; teams: TeamRank[] }
 export interface Member {
   id: string; name: string; connected: boolean; ready: boolean; participated: boolean;
   forfeited: boolean; progress?: Progress; tint: number;
+  checkedIn: boolean; position: number; side: number | null;
+}
+export interface MatchPanel { side: number; scene: Scene | null; progress: Progress | null; cursor: number | null; cleared: boolean }
+export interface RemoteControls { questionId?: number; choices?: number }
+export interface MatchView {
+  mode: MatchMode; arrivalDeadline: number; winner: number | null;
+  panels?: MatchPanel[]; remote?: RemoteControls;
 }
 export interface RoomView {
   id: string; stationId: string; gameId: string; hostId: string; teamId: string | null; round: number;
@@ -101,8 +110,9 @@ export interface RoomView {
   now: number; members: Member[]; scene: Scene | null; progress: Progress | null; seq: number;
   doubleChallenge: DoubleChallenge | null;
   course: { step: number; tier: Difficulty } | null;
+  match: MatchView | null;
 }
-export interface DoubleChallenge { playerId: string; playerName: string; startedAt: number }
+export interface DoubleChallenge { playerId: string; playerName: string; startedAt: number; tier?: Difficulty }
 export interface FloorMapStatus { revision: number; custom: boolean }
 export interface StationView {
   id: string; name: string; floor: Floor; x: number; y: number; hostId: string; gameId: string;
@@ -110,12 +120,12 @@ export interface StationView {
   activity: { id: string; status: RoomStatus; teamId: string | null; names: string[]; startedAt: number | null; deadline: number | null } | null;
 }
 export interface CampusState {
-  competitionId: number; now: number; stations: StationView[]; games: (GameInfo & { enabled: boolean })[];
+  competitionId: number; now: number; stations: StationView[]; games: (Omit<GameInfo, "mode"> & { mode: "versus"; enabled: boolean })[];
   leaderboard: Leaderboard; floorMaps: Record<Floor, FloorMapStatus>; doubleChance: number;
 }
 export interface QueueView { stationId: string; position: number }
 export interface RouteView {
-  completed: number;
+  completed: number; searching: boolean;
   next: { step: number; tier: Difficulty; gameId: string; stationId: string } | null;
 }
 export interface PlayerView {
@@ -142,12 +152,14 @@ export interface ClientEvents {
   "player:reconnect": (body: { token: string }, ack: (value: Ack<PlayerView>) => void) => void;
   "player:leave": (body: null, ack: (value: Ack) => void) => void;
   "team:join": (body: { teamId: string }, ack: (value: Ack<PlayerView>) => void) => void;
+  "match:find": (body: null, ack: (value: Ack<PlayerView>) => void) => void;
+  "match:cancel": (body: null, ack: (value: Ack<PlayerView>) => void) => void;
   "station:scan": (body: { stationId: string; code: string }, ack: (value: Ack) => void) => void;
   "station:join": (body: { stationId: string }, ack: (value: Ack<PlayerView>) => void) => void;
   "station:leave": (body: null, ack: (value: Ack<PlayerView>) => void) => void;
   "game:ready": (body: { sessionId: string; ready: boolean }, ack: (value: Ack<PlayerView>) => void) => void;
   "game:input": (body: z.infer<typeof inputSchema>, ack?: (value: Ack<{ seq: number }>) => void) => void;
-  "host:register": (body: { hostId: string; key: string; entryOrigin?: string }, ack: (value: Ack<HostView>) => void) => void;
+  "host:register": (body: { hostId: string; key: string; entryOrigin?: string; screenVersion?: number }, ack: (value: Ack<HostView>) => void) => void;
   "admin:watch": (body: { key: string }, ack: (value: Ack<AdminState>) => void) => void;
 }
 

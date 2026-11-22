@@ -16,11 +16,11 @@ const formatTime = (value: number) => new Intl.DateTimeFormat("zh-HK", {
   month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
 }).format(value);
 const actionLabels: Record<string,string> = {
-  start: "啟動倒數", stop: "停止本場", reset: "作廢本場", "clear-queue": "清空隊列"
+  start: "啟動倒數", stop: "停止本場", reset: "作廢本場", "clear-queue": "取消候場"
 };
 const reasons: Record<string,string> = {
   goal: "達成任務", timeout: "時間到", stopped: "管理員停止", forfeit: "退出", reset: "已重設",
-  "lobby-expired": "候場逾時", "no-play": "未操作", error: "遊戲錯誤"
+  "lobby-expired": "候場逾時", "no-play": "未有兩方操作", "host-offline": "大螢幕離線", error: "遊戲錯誤"
 };
 const auditNames: Record<string,string> = {
   "player.create": "新增玩家", "player.rename": "更名", "player.kick": "踢除玩家", "player.link": "重發入場連結",
@@ -274,17 +274,17 @@ function StationForm({ station, connection, adminKey, busy, run, ask, onKey }: {
       </div>
     </form>
     <div className="admin-room-actions">
-      <h3>場次操作</h3><p className="muted">{station.activity ? "參賽者 " + station.activity.names.join("、") : "目前沒有場次"} · 排隊 {station.queued} 人</p>
+      <h3>場次操作</h3><p className="muted">{station.activity ? "參賽者 " + station.activity.names.join("、") : "目前沒有場次"} · {station.queued} 人未報到</p>
       <div className="admin-actions">
         <button className="button compact secondary" disabled={busy || station.activity?.status !== "lobby" || !station.open} onClick={() => ask({
-          title: actionLabels.start, detail: "本站玩家就緒後可開始 3 秒倒數。", run: post("start")
+          title: actionLabels.start, detail: "至少兩位在線玩家掃碼並就緒後可開始 3 秒倒數。", run: post("start")
         })}>{actionLabels.start}</button>
         {([
-          ["stop","停止目前場次。玩家可重新掃碼挑戰同一任務。"],
-          ["reset","作廢目前場次並保留作廢紀錄，玩家可重新掃碼挑戰同一任務。"],
-          ["clear-queue","移除本站所有候補，已加入的場次繼續進行。"]
+          ["stop","停止目前場次，玩家可重新配對。"],
+          ["reset","作廢目前場次並保留紀錄，玩家可重新配對。"],
+          ["clear-queue","取消本站尚未開打的配對。"]
         ] as const).map(([id, detail]) => <button key={id} className="button compact secondary" disabled={busy ||
-          (["stop","reset"].includes(id) && !station.activity) || (id === "clear-queue" && !station.queued)}
+          (["stop","reset"].includes(id) && !station.activity) || (id === "clear-queue" && station.activity?.status !== "lobby")}
           onClick={() => ask({ title: actionLabels[id], detail, run: post(id) })}>{actionLabels[id]}</button>)}
       </div>
     </div>
@@ -353,7 +353,7 @@ function AdminPlayers({ admin, connection, adminKey, busy, run, ask, exportTeams
       const result = await adminRequest<{ token: string }>(adminKey,"/players/" + player.id + "/link","POST");
       await showLink(result.token);
     })],
-    [Trash,"踢除手機連線", () => ask({ title: "踢除手機連線", detail: "中止 " + player.name + " 的手機連線，停用舊入場連結並取消進行中的場次。",
+    [Trash,"踢除手機連線", () => ask({ title: "踢除手機連線", detail: "中止 " + player.name + " 的手機連線並停用舊入場連結。",
       run: async () => { await adminRequest(adminKey,"/players/" + player.id + "/kick","POST"); } })]
   ] as const;
   return <div className="admin-columns player-admin">
@@ -370,7 +370,7 @@ function AdminPlayers({ admin, connection, adminKey, busy, run, ask, exportTeams
         <tbody>{admin.players.filter(player => (player.name + " " + player.teamId).toLowerCase().includes(search.trim().toLowerCase())).map(player => <tr key={player.id}>
           <th scope="row">{player.name}</th><td><TeamTag id={player.teamId}/></td><td><Status online={player.connected} label={player.needsLink ? "連結已停用" : undefined}/></td>
           <td>{player.stationId ? connection.state?.stations.find(item => item.id === player.stationId)?.name ?? player.stationId : "—"}</td>
-          <td>{connection.state?.leaderboard.players.find(item => item.id === player.id)?.completed ?? 0} / {ROUTE_LENGTH}</td>
+          <td>{Math.min(connection.state?.leaderboard.players.find(item => item.id === player.id)?.completed ?? 0, ROUTE_LENGTH)} / {ROUTE_LENGTH}</td>
           <td className="em-score">{fmtScore(player.totalScore)}</td><td><div className="player-actions">
             {actions(player).map(([Icon,label,fn]) => <button key={label} className="icon-button" type="button" disabled={busy}
               onClick={fn} aria-label={label + " " + player.name} title={label}><Icon size={17}/></button>)}</div></td>

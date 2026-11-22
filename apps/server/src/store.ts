@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
@@ -8,7 +8,6 @@ import {
 import { FLOORS, originalFloorStations, planPosition, type Floor } from "../../../packages/shared/floors";
 import type { AdminState, EndReason, Leaderboard, PlayerIdentity, PlayerRank, Result, RoomStatus, StationView, TeamRank, TeamResult } from "../../../packages/shared/protocol";
 import { migrations } from "./migrations";
-import { shuffled } from "../../../packages/game-sdk";
 
 export class RequestError extends Error {
   constructor(message: string, public readonly code = "invalid", public readonly status = 400) { super(message); }
@@ -25,14 +24,18 @@ export interface SessionRow {
   seed: number; engine_state: string | null; roster: string;
   double_due_at: number | null; double_player_id: string | null; double_started_at: number | null;
   route_step?: number;
+  match_tier?: number;
+  winner_side?: number | null;
 }
 export interface MemberRow {
   player_id: string; team_id: string; ready: number; participated: number; forfeited: number;
   last_seq: number; won_at: number | null;
   played: number;
+  checked_in: number;
+  side: number | null;
+  route_step: number;
 }
-export interface QueueRow { ticket: number; station_id: string; player_id: string; team_id: string; created_at: number }
-export interface RouteStep { step: number; gameId: string; stationId: string; seed: number }
+export interface MatchTicket { player_id: string; queued_at: number }
 interface SQLRank extends PlayerRank { soloUnits: number; multiUnits: number }
 interface TeamRow { team_id: string; team_name: string; member_count: number }
 type ResultRow = Omit<Result, "participated" | "metrics"> & { participated: number; metrics: string };
@@ -157,7 +160,6 @@ export class Store {
       const token = randomBytes(32).toString("base64url");
       this.run("INSERT INTO players(player_id,player_name,name_key,team_id,token_hash,created_at) VALUES (?,?,?,?,?,?)",
         id, name, nameKey(name), team.team_id, hash(token), now);
-      this.writeRoute(id);
       return { id, token };
     });
   }
@@ -221,51 +223,17 @@ export class Store {
     return this.all<Omit<StationView, "activity" | "round">>(`
       SELECT s.station_id AS id,s.station_name AS name,s.floor,s.position_x AS x,s.position_y AS y,s.open,
         h.host_id AS hostId,h.assigned_game_id AS gameId,h.connection_status AS online,
-        (SELECT COUNT(*) FROM station_queue q WHERE q.station_id=s.station_id) AS queued,
+        (SELECT COUNT(*) FROM game_sessions gs JOIN session_members m USING(session_id)
+          WHERE gs.station_id=s.station_id AND gs.competition_id=? AND gs.status='lobby' AND m.checked_in=0) AS queued,
         (SELECT COUNT(*) FROM game_sessions gs WHERE gs.station_id=s.station_id AND gs.competition_id=? AND gs.status='finished') AS completed
       FROM campus_stations s JOIN hosts h ON s.assigned_host_id=h.host_id ORDER BY s.station_id
-    `, this.competitionId);
+    `, this.competitionId, this.competitionId);
   }
-  queue(stationId: string) {
-    return this.all<QueueRow>("SELECT * FROM station_queue WHERE station_id=? ORDER BY ticket", stationId);
-  }
-  ensureRoute(playerId: string) {
-    if (this.get("SELECT 1 FROM player_routes WHERE competition_id=? AND player_id=? LIMIT 1", this.competitionId, playerId)) return;
-    this.transaction(() => this.writeRoute(playerId));
-  }
-  private writeRoute(playerId: string) {
-    const stations = this.all<{ gameId: string; floor: Floor; assigned: number }>(`
-      SELECT h.assigned_game_id AS gameId,s.floor,(SELECT COUNT(*) FROM player_routes r
-        WHERE r.competition_id=? AND r.step=1 AND r.game_id=h.assigned_game_id) AS assigned
-      FROM campus_stations s JOIN hosts h ON h.station_id=s.station_id ORDER BY assigned,s.station_id
-    `, this.competitionId);
-    if (stations.length !== GAMES.length || new Set(stations.map(item => item.gameId)).size !== GAMES.length) {
-      throw new Error("每款遊戲必須有一個固定站點");
-    }
-    const leastAssigned = stations.filter(item => item.assigned === stations[0].assigned);
-    const first = leastAssigned[randomInt(leastAssigned.length)];
-    const rest = stations.filter(item => item !== first);
-    const sameFloor = rest.filter(item => item.floor === first.floor);
-    const otherFloor = rest.filter(item => item.floor !== first.floor);
-    let ordered;
-    do {
-      ordered = [first, ...shuffled(sameFloor, randomInt), ...shuffled(otherFloor, randomInt)];
-    } while (this.get(`SELECT 1 FROM player_routes WHERE competition_id=? GROUP BY player_id
-      HAVING group_concat(game_id, ',' ORDER BY step)=? LIMIT 1`, this.competitionId, ordered.map(item => item.gameId).join(",")));
-    for (const [index, { gameId }] of ordered.entries()) {
-      let inserted = false;
-      while (!inserted) {
-        inserted = Boolean(this.run(`INSERT INTO player_routes(competition_id,player_id,step,game_id,seed) VALUES (?,?,?,?,?)
-          ON CONFLICT(competition_id,game_id,seed) DO NOTHING`, this.competitionId, playerId, index + 1, gameId,
-          randomInt(0x1_0000_0000)).changes);
-      }
-    }
-  }
-  nextRoute(playerId: string) {
-    return this.get<RouteStep>(`SELECT r.step,r.game_id AS gameId,h.station_id AS stationId,r.seed
-      FROM player_routes r JOIN hosts h ON h.assigned_game_id=r.game_id
-      LEFT JOIN official_results o ON o.competition_id=r.competition_id AND o.player_id=r.player_id AND o.game_id=r.game_id
-      WHERE r.competition_id=? AND r.player_id=? AND o.result_id IS NULL ORDER BY r.step LIMIT 1`, this.competitionId, playerId);
+  playedGames(playerId: string) {
+    return this.all<{ gameId: string; floor: Floor }>(`SELECT r.game_id AS gameId,s.floor
+      FROM official_results o JOIN game_results r USING(result_id)
+      JOIN game_sessions gs USING(session_id) JOIN campus_stations s USING(station_id)
+      WHERE o.competition_id=? AND o.player_id=? ORDER BY r.result_id DESC`, this.competitionId, playerId);
   }
   mapStatus() {
     const rows = this.all<{ floor: Floor; revision: number; custom: number }>(
@@ -343,6 +311,7 @@ export class Store {
       this.run(`UPDATE game_sessions SET status='cancelled',reason='reset',ended_at=? WHERE competition_id=?
         AND status IN ('lobby','countdown','running')`, now, this.competitionId);
       this.run("DELETE FROM station_queue");
+      this.run("DELETE FROM match_search");
       this.run("UPDATE players SET score_units=0");
       const next = this.createCompetition(now);
       this.audit(action, this.competitionId + " → " + next, now);

@@ -59,7 +59,7 @@ export function ErrorText({ text }: { text: string }) {
 }
 export function DoubleBanner({ challenge, playerId, team, tier = 1 }: { challenge: DoubleChallenge; playerId?: string; team: boolean; tier?: Difficulty }) {
   const isYou = challenge.playerId === playerId;
-  const { win, loss } = routePoints(tier);
+  const { win, loss } = routePoints(challenge.tier ?? tier);
   return <div className="double-banner" role="status" data-enter>
     <span className="double-symbol"><Lightning size={22} weight="fill"/></span>
     <div><strong>{isYou ? "你抽中了雙倍挑戰" : challenge.playerName + " 抽中雙倍挑戰"}</strong>

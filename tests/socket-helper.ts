@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { io, type Socket } from "socket.io-client";
 import type { Ack, Action, ClientEvents, ServerEvents } from "../packages/shared/protocol";
 import { hostKey } from "../apps/server/src/config";
+import { HOST_SCREEN_VERSION } from "../packages/shared/rules";
 import { createService } from "../apps/server/src/service";
 import { plugins } from "../local-games/registry";
 
@@ -35,7 +36,9 @@ export async function harness(dbPath = ":memory:", start = 100_000, realTime = f
   });
   async function host(id: string) {
     const client = await connect();
-    await ok(client, "host:register", { hostId: id, key: hostKey(credentials.hostSecret, id), entryOrigin: origin });
+    await ok(client, "host:register", {
+      hostId: id, key: hostKey(credentials.hostSecret, id), entryOrigin: origin, screenVersion: HOST_SCREEN_VERSION
+    });
     return client;
   }
   function stationCode(stationId: string) {
@@ -61,43 +64,55 @@ export async function harness(dbPath = ":memory:", start = 100_000, realTime = f
     const { token, state } = await ok(socket, "player:join", { name, teamId });
     return { socket, token, id: state.player.id, state };
   }
+  function panel(id: string) {
+    const room = service.campus.playerView(id).room!;
+    const side = room.members.find(member => member.id === id)!.side;
+    return service.campus.hostView(room.hostId).room!.match!.panels!.find(item => item.side === side)!;
+  }
+  async function control(player: { socket: Client; id: string }, action: Action) {
+    const room = service.campus.playerView(player.id).room!;
+    return ok(player.socket, "game:input", { sessionId: room.id, seq: room.seq + 1, action });
+  }
   async function operate(client: Client, id: string) {
     const room = service.campus.playerView(id).room!;
-    const scene = room.scene!;
+    const visible = panel(id);
+    const scene = visible.scene!;
     assert.equal(room.status, "running");
-    let inputs: Action[] = ["up", "right", "down", "left"].map(direction =>
-      ({ kind: "move", direction: direction as "up" | "right" | "down" | "left" }));
-    if (scene.kind === "grid") {
-      const index = scene.tiles.findIndex(tile => tile.action);
-      if (index >= 0) inputs = [{ kind: "cell", index }];
-    } else if (scene.kind === "tubes") {
-      inputs = [{ kind: "cell", index: scene.tubes.findIndex(tube => tube.length) }];
+    let inputs: Action[] = (["up", "right", "down", "left"] as const).map(direction => ({ kind: "move", direction }));
+    if (visible.cursor !== null) {
+      if (scene.kind === "tubes" && !scene.tubes[visible.cursor].length) {
+        for (let at = visible.cursor; !scene.tubes[at].length; at = (at + 1) % scene.tubes.length) {
+          await control({ socket: client, id }, { kind: "cursor", direction: "right" });
+        }
+      }
+      inputs = [{ kind: "action", action: "interact" }];
     } else if (scene.kind === "quiz") {
       const question = scene.prompt!;
-      inputs = [{ kind: "answer", questionId: question.id, value: question.options?.[0].value ?? "1" }];
-    } else if (scene.theme !== "road") {
+      inputs = [question.options ? { kind: "choice", questionId: question.id, index: 0 }
+        : { kind: "answer", questionId: question.id, value: "1" }];
+    } else if (scene.kind === "arcade" && scene.theme !== "road") {
       inputs = [{ kind: "action", action: scene.theme === "space" ? "shoot" : "jump" }];
     }
-    for (const [i, action] of inputs.entries()) {
-      await ok(client, "game:input", { sessionId: room.id, seq: room.seq + 1 + i, action });
+    for (const action of inputs) {
+      await control({ socket: client, id }, action);
       if (service.store.get<{ played: number }>("SELECT played FROM session_members WHERE session_id=? AND player_id=?", room.id, id)!.played) return;
     }
     assert.fail("No valid input registered for " + room.gameId);
   }
-  function fixtureRoute(playerId: string, ...prefix: string[]) {
-    const competition = service.store.competitionId;
-    const route = service.store.all<{ game_id: string; seed: number }>(`SELECT game_id,seed FROM player_routes
-      WHERE competition_id=? AND player_id=? ORDER BY step`, competition, playerId);
-    const ordered = prefix.map(gameId => route.find(entry => entry.game_id === gameId)!)
-      .concat(route.filter(entry => !prefix.includes(entry.game_id)));
-    assert.equal(new Set(ordered.map(entry => entry.game_id)).size, 20);
-    service.store.transaction(() => {
-      service.store.run("DELETE FROM player_routes WHERE competition_id=? AND player_id=?", competition, playerId);
-      for (const [index, entry] of ordered.entries()) {
-        service.store.run(`INSERT INTO player_routes(competition_id,player_id,step,game_id,seed) VALUES (?,?,?,?,?)`,
-          competition, playerId, index + 1, entry.game_id, entry.seed);
-      }
-    });
+  async function match(players: { socket: Client; id: string }[]) {
+    await Promise.all(players.map(player => ok(player.socket, "match:find", null)));
+    step(10_000);
+    const rooms = players.map(player => service.campus.playerView(player.id).room);
+    assert.ok(rooms.every(room => room && room.id === rooms[0]!.id));
+    return rooms[0]!;
+  }
+  async function begin(players: { socket: Client; id: string }[], stationId: string) {
+    const joined = await Promise.all(players.map(player => joinStation(player.socket, stationId)));
+    const sessionId = joined[0].room!.id;
+    const ready = await Promise.all(players.map(player => ok(player.socket, "game:ready", { sessionId, ready: true })));
+    assert.ok(ready.some(item => item.room?.status === "countdown"));
+    step(3000);
+    return service.campus.playerView(players[0].id).room!;
   }
   function step(delta = 0) { time += delta; service.campus.step(); }
   async function admin(path: string, body?: unknown, method = body === undefined ? "GET" : "POST") {
@@ -110,7 +125,7 @@ export async function harness(dbPath = ":memory:", start = 100_000, realTime = f
     for (const client of clients) client.close();
     await service.close();
   }
-  return { ...service, origin, connect, host, player, stationCode, joinStation, attemptStation, fixtureRoute, operate, step, time: now, admin, close };
+  return { ...service, origin, connect, host, player, stationCode, joinStation, attemptStation, panel, control, operate, match, begin, step, time: now, admin, close };
 }
 export const scanCode = (url: string) => new URLSearchParams(new URL(url).hash.slice(1)).get("scan")!;
 

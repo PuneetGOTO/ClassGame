@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowRight, Check, CircleNotch, DoorOpen, Flag, GameController, ListChecks, MapPin, UsersThree, Trophy,
-  PuzzlePiece, Compass, Calculator, QrCode
+  PuzzlePiece, Compass, Calculator, QrCode, Monitor
 } from "@phosphor-icons/react";
 import { categoryLabel, gameById, TEAM_SIZE } from "../../../packages/shared/catalog";
 import { floorLabel } from "../../../packages/shared/floors";
 import type { Action, PlayerView, RoomView, Result, StationView } from "../../../packages/shared/protocol";
-import { difficultyLabel, ROUTE_LENGTH, ROUTE_TIER_SIZE, routePoints, routeTiers } from "../../../packages/shared/route";
-import { Dialog, DoubleBanner, Empty, ErrorText, fmtChange, fmtScore, numberOf, RoomClock, StationStatus, TeamTag } from "../../../packages/ui/components";
-import { GameControls, MissionProgress, SceneView } from "../../../packages/ui/game-view";
+import { difficultyLabel, modeTitle, sideLabels, ROUTE_LENGTH, routeTierSizes, routePoints, routeTiers } from "../../../packages/shared/route";
+import { Countdown, Dialog, DoubleBanner, Empty, ErrorText, fmtChange, fmtScore, numberOf, RoomClock, StationStatus, TeamTag } from "../../../packages/ui/components";
+import { GameControls, Members } from "../../../packages/ui/game-view";
 import { message, RemoteError, request, socket, type CampusConnection } from "../../../packages/ui/network";
 
 const tokenKey = "campus.playerToken";
@@ -58,13 +58,9 @@ export function Controller({ connection }: { connection: CampusConnection }) {
   const enterScanned = useCallback(async (view: PlayerView) => {
     const proof = scanProof.current;
     if (!entryStation || !proof || !await proof || proof !== scanProof.current || joinedScan.current) return;
-    if ((view.room?.stationId ?? view.queue?.stationId) === entryStation) {
+    if (view.room?.stationId === entryStation && view.room.members.find(member => member.id === view.player.id)?.checkedIn) {
       joinedScan.current = true;
       setScanError("");
-      return;
-    }
-    if (view.room || view.queue) {
-      setError("請先離開目前的場次或隊列，再進入掃描的房間");
       return;
     }
     try {
@@ -185,9 +181,9 @@ export function Controller({ connection }: { connection: CampusConnection }) {
       <p className="eyebrow">手機控制器</p>
       <h1>加入校園闖關</h1>
       <p className="muted">{routeStation ? floorLabel[routeStation.floor] + " " + routeStation.name + " · " + gameById.get(routeStation.gameId)?.name
-        : "登記後會收到第一站。到指定房間掃描大螢幕的 QR Code 入場。"}</p>
-      {scanAccepted && <p className="notice success">已掃描本站 QR Code，請完成登記。</p>}
-      {entryStation && !hasScan && <p className="notice">請到房間掃描大螢幕上的最新 QR Code。</p>}
+        : "登記後尋找對手，再到指定房間掃碼。遊戲會顯示在房間的大螢幕上。"}</p>
+      {scanAccepted && <p className="notice success">已讀取本站入場碼。請登記並尋找對手。</p>}
+      {entryStation && !hasScan && <p className="notice">配對後請到指定房間掃描最新的 QR Code。</p>}
       <form onSubmit={join} className="form-stack">
         <label>玩家名稱<input name="playerName" maxLength={24} required value={name} onChange={event => setName(event.target.value)} placeholder="輸入你的名稱" autoComplete="nickname"/></label>
         <label>隊伍<select value={team} onChange={event => setTeam(event.target.value)}>
@@ -207,9 +203,9 @@ export function Controller({ connection }: { connection: CampusConnection }) {
   const roomStation = room && campus?.stations.find(station => station.id === room.stationId);
   const me = room?.members.find(member => member.id === player.player.id);
   const result = player.lastResult;
-  const lastStation = player.queue && campus?.stations.find(station => station.id === player.queue!.stationId);
-  const visibleResult = !room && !player.queue && result && dismissed !== result.sessionId;
+  const visibleResult = !room && !player.route.searching && result && dismissed !== result.sessionId;
   const nextStation = campus?.stations.find(station => station.id === player.route.next?.stationId);
+  const showRemote = me?.checkedIn && room?.status !== "cancelled";
   const showExit = () => setShowLeave(true);
   return <main id="main" className={"controller narrow" + (room?.status === "running" ? " controller-playing" : "")}>
     <div className="controller-id">
@@ -217,9 +213,8 @@ export function Controller({ connection }: { connection: CampusConnection }) {
       <a className="controller-score" href="/leaderboard" title="即時排行榜"><Trophy size={18}/> <strong>{fmtScore(player.player.totalScore)}</strong> 分</a>
     </div>
     {!online && <p className="notice">正在重新連線，中央計時仍在進行</p>}
-    <ErrorText text={error}/>
-    {!room && !player.queue && <ErrorText text={scanError}/>}
-    {room && game && room.status !== "cancelled" && <section className="panel play-panel">
+    <ErrorText text={error || (!showRemote ? scanError : "")}/>
+    {room && game && showRemote && <section className="panel play-panel remote-panel">
       <div className="play-heading">
         <div><p className="eyebrow">{room.course && "第 " + room.course.step + " 關 · " + difficultyLabel[room.course.tier] + " · "}
           {roomStation ? floorLabel[roomStation.floor] + " " + roomStation.name : "站點 " + numberOf(room.stationId)}</p>
@@ -227,28 +222,28 @@ export function Controller({ connection }: { connection: CampusConnection }) {
         {(room.status === "running" || room.status === "countdown") && <div className="play-clock"><RoomClock room={room} offset={offset}/></div>}
       </div>
       {room.status === "lobby" && <>
-        <p className="muted">{game.objective}</p>
+        <div className="section-line"><h2>{room.match && modeTitle[room.match.mode]}</h2>
+          <span className="muted">報到倒數 <Countdown end={room.match?.arrivalDeadline} offset={offset}/></span></div>
+        <Members room={room} self={player.player.id}/>
         <button className={"button full " + (me?.ready ? "secondary" : "primary")} disabled={!online || busy} onClick={() => void run(async () => {
           update(await request("game:ready", { sessionId: room.id, ready: !me?.ready }));
         })}>{me?.ready ? "取消就緒" : "我已準備好"} <Check size={19}/></button>
+        <p className="muted small">至少兩位玩家到場並就緒才可開局。</p>
       </>}
       {room.status === "countdown" && <div className="countdown-center"><p>即將開始</p><RoomClock room={room} offset={offset}/></div>}
+      {(room.status === "countdown" || room.status === "running") && me?.side != null && <div className="remote-player" data-side={me.side}>
+        <strong>P{me.position} · {sideLabels[me.side]}</strong>
+        <span><Monitor size={18}/> 看大螢幕操作</span>
+      </div>}
       {room.status === "running" && <>
-        {room.doubleChallenge && <DoubleBanner challenge={room.doubleChallenge} playerId={player.player.id} team={Boolean(room.teamId)} tier={room.course?.tier}/>}
-        {room.scene && <SceneView scene={room.scene} onAction={me?.participated && !me.forfeited && online ? send : undefined}/>}
-        {room.scene && me?.participated && !me.forfeited && online && <GameControls scene={room.scene} controls={game.controls} gameId={game.id} send={send}/>}
-        <MissionProgress room={room}/>
+        {room.doubleChallenge && <DoubleBanner challenge={room.doubleChallenge} playerId={player.player.id} team={false}/>}
+        {me?.participated && !me.forfeited && online &&
+          <GameControls key={room.id} remote={room.match?.remote ?? {}} controls={game.controls} gameId={game.id} send={send}/>}
+        <p className="muted small">每位玩家須操作，這場才會計入個人關卡。</p>
       </>}
       {room.status === "finished" && <p className="notice">正在同步本場成績</p>}
       {room.status === "lobby" &&
         <button className="text-button" onClick={showExit} disabled={!online || busy}><DoorOpen size={16}/> 離開場次</button>}
-    </section>}
-    {room?.status === "cancelled" && <p className="notice">{room.reason === "lobby-expired" ? "候場時間已到，請重新掃描指定房間的 QR Code。" : "這個場次已取消。"}</p>}
-    {player.queue && <section className="panel queue-panel">
-      <div className="feature-icon"><UsersThree size={26}/></div><p className="eyebrow">正在排隊</p>
-      <h1>{lastStation ? floorLabel[lastStation.floor] + " " + lastStation.name : player.queue.stationId}</h1>
-      <p className="muted">第 {player.queue.position} 位 · 輪到你時會自動進入候場</p>
-      <button className="button secondary" onClick={showExit} disabled={!online || busy}>離開隊列</button>
     </section>}
     {visibleResult && <section className={"panel result-panel " + (result.outcome === "win" ? "won" : "lost")}>
       <div className="feature-icon"><Flag size={30} weight="fill"/></div>
@@ -258,11 +253,14 @@ export function Controller({ connection }: { connection: CampusConnection }) {
       <p className={"result-points" + (result.awarded < 0 ? " negative-points" : "")}>{fmtChange(result.awarded)} <span>分</span></p>
       <p className="muted">已完成 {player.route.completed} / {ROUTE_LENGTH} 關 · 個人總分 {fmtScore(player.player.totalScore)}</p>
       <button className="button primary full" onClick={() => setDismissed(result.sessionId)}>
-        {player.route.next ? "查看下一站" : "查看完成紀錄"} <ArrowRight size={18}/>
+        {player.route.completed >= ROUTE_LENGTH ? "查看完成紀錄" : "繼續闖關"} <ArrowRight size={18}/>
       </button>
     </section>}
-    {!room && !player.queue && !visibleResult && <>
-      <NextMission route={player.route} station={nextStation} showHistory={() => setShowHistory(true)}/>
+    {!showRemote && !visibleResult && <>
+      <NextMission route={player.route} station={nextStation} room={room?.status === "lobby" ? room : null} offset={offset}
+        busy={busy || !online} showHistory={() => setShowHistory(true)}
+        start={() => void run(async () => update(await request("match:find", null)))}
+        cancel={() => void run(async () => update(await request("match:cancel", null)))}/>
       <div className="controller-footer"><button className="text-button" disabled={!online} onClick={() => { setTeam(player.player.teamId); setShowTeam(true); }}>
         <UsersThree size={17}/> 變更隊伍</button>
         <button className="text-button" disabled={!online || busy} onClick={() => void run(async () => {
@@ -270,12 +268,11 @@ export function Controller({ connection }: { connection: CampusConnection }) {
         })}><DoorOpen size={17}/> 登出此裝置</button></div>
     </>}
     {showHistory && <Dialog title="我的闖關紀錄" onClose={() => setShowHistory(false)}><GameHistory results={player.results}/></Dialog>}
-    {showLeave && <Dialog title={player.queue ? "離開隊列" : "離開場次"} onClose={() => setShowLeave(false)}>
-      <p className="muted">稍後可到同一個房間掃碼，繼續你的任務。</p>
+    {showLeave && <Dialog title="離開候場" onClose={() => setShowLeave(false)}>
+      <p className="muted">離開後可重新尋找對手。</p>
       <button className="button danger full" disabled={busy} onClick={() => { setShowLeave(false); void run(async () => {
         const view = await request("station:leave", null);
         update(view);
-        await enterScanned(view);
       }); }}>確認離開</button>
     </Dialog>}
     {showTeam && <Dialog title="變更隊伍" onClose={() => setShowTeam(false)}>
@@ -289,22 +286,28 @@ export function Controller({ connection }: { connection: CampusConnection }) {
   </main>;
 }
 
-function NextMission({ route, station, showHistory }: { route: PlayerView["route"]; station?: StationView; showHistory: () => void }) {
+function NextMission({ route, station, room, offset, busy, showHistory, start, cancel }: {
+  route: PlayerView["route"]; station?: StationView; room: RoomView | null; offset: number; busy: boolean;
+  showHistory: () => void; start: () => void; cancel: () => void;
+}) {
   const { next, completed } = route;
+  const done = completed >= ROUTE_LENGTH;
   const game = next ? gameById.get(next.gameId) : undefined;
   const Icon = game ? iconFor[game.category] : Flag;
   const points = next && routePoints(next.tier);
   return <section className="panel route-card" aria-labelledby="route-heading" data-enter>
     <div className="section-line">
-      <div><p className="eyebrow">個人闖關路線</p><h1 id="route-heading">{next ? "你的下一站" : "20 關全數完成"}</h1></div>
+      <div><p className="eyebrow">校園對戰</p><h1 id="route-heading">
+        {done ? "10 關全數完成" : next ? "前往對戰房間" : route.searching ? "正在尋找對手" : "準備下一關"}
+      </h1></div>
       <button type="button" className="icon-button" aria-label="我的闖關紀錄" onClick={showHistory}><ListChecks size={23}/></button>
     </div>
     <div className="route-progress">
       <div className="section-line"><span>已完成</span><strong>{completed} / {ROUTE_LENGTH} 關</strong></div>
       <div className="route-track" aria-hidden="true">
-        {routeTiers.map(tier => <div key={tier} data-current={tier === next?.tier}>
-          {Array.from({ length: ROUTE_TIER_SIZE }, (_, index) =>
-            <i key={index} data-done={(tier - 1) * ROUTE_TIER_SIZE + index < completed}/>)}
+        {routeTiers.map((tier, group) => <div key={tier} data-current={tier === next?.tier} style={{ flex: routeTierSizes[group] }}>
+          {Array.from({ length: routeTierSizes[group] }, (_, index) =>
+            <i key={index} data-done={routeTierSizes.slice(0, group).reduce<number>((sum, count) => sum + count, 0) + index < completed}/>)}
         </div>)}
       </div>
     </div>
@@ -315,6 +318,8 @@ function NextMission({ route, station, showHistory }: { route: PlayerView["route
           <h2>{game.name}</h2></div>
       </div>
       <p className="route-location"><MapPin size={22} weight="fill"/> {station ? floorLabel[station.floor] + " · " + station.name : next.stationId}</p>
+      {room?.match && <div className="section-line"><strong>{modeTitle[room.match.mode]}</strong>
+        <span className="muted">報到倒數 <Countdown end={room.match.arrivalDeadline} offset={offset}/></span></div>}
       <p className="muted">{game.objective}</p>
       <div className="route-rules"><span>60 秒</span><span>勝利 +{points.win}</span><span>失敗 +{points.loss}</span></div>
       {station && <StationStatus station={station}/>}
@@ -322,7 +327,15 @@ function NextMission({ route, station, showHistory }: { route: PlayerView["route
       <a className="button primary full" href={station ? "/?floor=" + station.floor + "&station=" + station.id : "/"}>
         查看房間位置 <ArrowRight size={18}/>
       </a>
-    </> : <button className="button primary full" onClick={showHistory}>查看闖關紀錄 <ListChecks size={20}/></button>}
+      <button type="button" className="text-button" disabled={busy} onClick={cancel}>取消配對</button>
+    </> : done ? <button className="button primary full" onClick={showHistory}>查看闖關紀錄 <ListChecks size={20}/></button>
+      : route.searching ? <>
+        <p className="muted" role="status"><CircleNotch size={18}/> 正在找玩家和可用的房間。配對後手機會顯示房號。</p>
+        <button className="button secondary full" disabled={busy} onClick={cancel}>取消尋找</button>
+      </> : <>
+        <p className="muted">配對後到房間掃碼。看著大螢幕，用手機控制你的角色或作答。</p>
+        <button className="button primary full" disabled={busy} onClick={start}>尋找對手 <ArrowRight size={18}/></button>
+      </>}
   </section>;
 }
 

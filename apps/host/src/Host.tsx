@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, ArrowsOut, DeviceMobile, FlagBanner, Monitor, QrCode, UsersThree } from "@phosphor-icons/react";
+import { ArrowRight, ArrowsOut, FlagBanner, Monitor, QrCode, Trophy, UsersThree } from "@phosphor-icons/react";
 import { fixedId, gameById, STATION_COUNT } from "../../../packages/shared/catalog";
 import { floorLabel } from "../../../packages/shared/floors";
-import { STATION_QR_MS } from "../../../packages/shared/rules";
-import { difficultyLabel } from "../../../packages/shared/route";
+import { HOST_SCREEN_VERSION, STATION_QR_MS } from "../../../packages/shared/rules";
 import type { HostView, Result, RoomView, StationEntry, TeamResult } from "../../../packages/shared/protocol";
-import { Brand, DoubleBanner, ErrorText, fmtChange, fmtScore, HomeLink, Qr, RoomClock, StationStatus, Status, TeamTag } from "../../../packages/ui/components";
-import { Members, MissionProgress, SceneView } from "../../../packages/ui/game-view";
+import { modeTitle, sideLabels } from "../../../packages/shared/route";
+import { Brand, Countdown, DoubleBanner, ErrorText, fmtChange, HomeLink, ProgressBar, Qr, RoomClock, StationStatus, Status } from "../../../packages/ui/components";
+import { Members, SceneView } from "../../../packages/ui/game-view";
 import { message, request, socket, type CampusConnection } from "../../../packages/ui/network";
 
 const savedHost = "campus.host";
@@ -31,7 +31,7 @@ function StationQr({ entry, open, online, offset }: { entry: StationEntry | null
 }
 
 export function Host({ connection }: { connection: CampusConnection }) {
-  const { online, offset, state: campus } = connection;
+  const { online, offset } = connection;
   const [id, setId] = useState(requestedHost && hosts.includes(requestedHost) ? requestedHost : localStorage.getItem(savedHost) || hosts[0]);
   const [key, setKey] = useState(() => stored(id));
   const [host, setHost] = useState<HostView | null>(null);
@@ -41,7 +41,7 @@ export function Host({ connection }: { connection: CampusConnection }) {
     if (!password) return;
     setBusy(true);
     try {
-      const view = await request("host:register", { hostId, key: password, entryOrigin: location.origin });
+      const view = await request("host:register", { hostId, key: password, entryOrigin: location.origin, screenVersion: HOST_SCREEN_VERSION });
       localStorage.setItem(savedHost, hostId);
       localStorage.setItem("campus.key." + hostId, password);
       setHost(view);
@@ -89,8 +89,7 @@ export function Host({ connection }: { connection: CampusConnection }) {
 
   const { station, room } = host;
   const game = gameById.get(room?.gameId ?? station.gameId)!;
-  const participants = room?.members.filter(member => member.participated).length ?? 0;
-  const wins = host.results.filter(item => item.outcome === "win").length;
+  const mode = room?.match ? modeTitle[room.match.mode] : null;
   const exit = () => {
     localStorage.removeItem("campus.key." + id);
     socket.disconnect();
@@ -109,36 +108,62 @@ export function Host({ connection }: { connection: CampusConnection }) {
     <ErrorText text={error}/>
     <div className="host-layout">
       <section className="panel host-game">
-        <div className="host-title"><div><p className="eyebrow">{room?.course ? "第 " + room.course.step + " 關 · " + difficultyLabel[room.course.tier] : game.english}</p><h1>{game.name}</h1></div>
+        <div className="host-title"><div><p className="eyebrow">{mode ?? game.english}</p><h1>{game.name}</h1></div>
           <div className="host-clock"><RoomClock room={room} offset={offset}/><span>{room?.status === "countdown" ? "開始倒數" : "剩餘時間"}</span></div>
         </div>
-        {room?.status === "running" && room.doubleChallenge && <DoubleBanner challenge={room.doubleChallenge} team={Boolean(room.teamId)} tier={room.course?.tier}/>}
-        {room?.status === "running" ? room.scene ? <div className="host-scene"><SceneView scene={room.scene}/></div>
-          : <div className="host-stage host-private"><DeviceMobile size={72} weight="duotone"/><h2>在手機進行個人任務</h2><p>{game.objective}</p></div>
-          : room?.status === "countdown" ? <div className="host-stage countdown-center"><span>準備開始</span><RoomClock room={room} offset={offset}/></div>
-          : room?.status === "finished" ? <div className={"host-stage host-outcome " + (wins ? "won" : "lost")}>
-            <FlagBanner size={64} weight="duotone"/><strong>{wins === participants && wins > 0 ? "闖關成功" : wins === 0 ? "挑戰未完成" : "挑戰結束"}</strong>
-            {host.teamResult ? <p>本關基礎平均 {fmtScore(host.teamResult.average)} 分 · 隊伍總分 {fmtScore(campus?.leaderboard.teams.find(team => team.id === host.teamResult!.teamId)?.score ?? 0)}</p>
-              : host.results[0] && <p>本關 {fmtChange(host.results[0].awarded)} 分 · 個人總分 {fmtScore(campus?.leaderboard.players.find(player => player.id === host.results[0].playerId)?.totalScore ?? 0)}</p>}
+        {room?.status === "running" && room.doubleChallenge && <DoubleBanner challenge={room.doubleChallenge} team={false}/>}
+        {room?.status === "running" ? <ArenaPanels room={room}/>
+          : room?.status === "countdown" ? <div className="host-stage countdown-center"><span>拿好手機，準備開局</span><RoomClock room={room} offset={offset}/>
+            <SideRoster room={room}/></div>
+          : room?.status === "finished" ? <div className={"host-stage host-outcome " + (room.match?.winner != null ? "won" : "lost")}>
+            <Trophy size={64} weight="duotone"/><strong>{room.match?.winner != null ? sideLabels[room.match.winner] + "獲勝" : "本場平手"}</strong>
+            <p>{room.reason === "timeout" ? "60 秒已到" : "達成關卡目標"}</p>
           </div>
-          : <div className="host-stage idle"><FlagBanner weight="duotone" size={72}/><h2>{room?.status === "lobby" ? "等候玩家就緒" : "等候玩家入場"}</h2>
+          : <div className="host-stage idle"><FlagBanner weight="duotone" size={68}/>
+            <h2>{room?.status === "lobby" ? "等候玩家掃碼及就緒" : "等待配對玩家"}</h2>
+            {room?.match && <p>報到倒數 <Countdown end={room.match.arrivalDeadline} offset={offset}/></p>}
             <p>{game.objective}</p><StationStatus station={station}/></div>}
-        {room?.status === "running" && <MissionProgress room={room}/>}
       </section>
       <aside className="host-aside">
         <section className="panel host-join"><div className="section-line"><h2><QrCode size={21}/> 手機入場</h2></div>
           <StationQr entry={host.entry} open={station.open} online={online} offset={offset}/>
-          <span>{station.name} · 排隊 {station.queued} 人</span>
+          <span>{station.name}{room?.status === "lobby" && " · " + station.queued + " 人尚未到場"}</span>
         </section>
-        <section className="panel host-members"><div className="section-line"><h2><UsersThree size={21}/> 參賽者</h2>{room?.teamId && <TeamTag id={room.teamId}/>}</div>
+        <section className="panel host-members"><div className="section-line"><h2><UsersThree size={21}/> 參賽者</h2></div>
           {host.results.length > 0 ? <div className="history-list">{host.results.map(result => <div key={result.playerId}><span>{result.playerName}</span>
             <strong className={result.awarded < 0 ? "negative-points" : undefined}>{result.participated
               ? (result.outcome === "win" ? "勝 " : "負 ") + fmtChange(result.awarded) + (result.doublePoints ? " · 雙倍" : "")
-              : "缺席"}</strong></div>)}</div>
+              : "未計分"}</strong></div>)}</div>
           : room ? <Members room={room}/> : <p className="muted">等待玩家加入場次</p>}
         </section>
       </aside>
     </div>
   </main>;
+}
+
+function SideNames({ room, side }: { room: RoomView; side: number }) {
+  return <div className="arena-side-names">
+    {room.members.filter(member => member.side === side).map(member => <span key={member.id}>
+      <b>P{member.position}</b> {member.name}
+    </span>)}
+  </div>;
+}
+
+function SideRoster({ room }: { room: RoomView }) {
+  const sides = [...new Set(room.members.flatMap(member => member.side === null ? [] : [member.side]))].sort();
+  return <div className="host-side-roster">{sides.map(side => <div key={side} data-side={side}>
+    <strong>{sideLabels[side]}</strong><SideNames room={room} side={side}/>
+  </div>)}</div>;
+}
+
+function ArenaPanels({ room }: { room: RoomView }) {
+  const panels = room.match?.panels ?? [];
+  return <div className="arena-panels" data-sides={panels.length} aria-label="即時對戰">
+    {panels.map(panel => <section className="arena-panel" key={panel.side} data-side={panel.side}>
+      <header><h2>{sideLabels[panel.side]}</h2><SideNames room={room} side={panel.side}/></header>
+      <div className="arena-board">{panel.scene && <SceneView scene={panel.scene} cursor={panel.cursor}/>}</div>
+      {panel.cleared ? <p className="arena-cleared">已達成任務</p> : panel.progress && <ProgressBar progress={panel.progress}/>}
+    </section>)}
+  </div>;
 }
 

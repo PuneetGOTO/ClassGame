@@ -57,34 +57,32 @@ test("solo scoring, partial attendance, mixed team result and ledger idempotency
   } finally { db.close(); }
 });
 
-test("base scores for a complete personal route total 100 for wins and 50 for losses", () => {
+test("base scores for ten matches total 50 for wins and 25 for losses", () => {
   const db = new Store(":memory:", 0);
   try {
     const players = Array.from({ length: 5 }, (_, i) => ({
       playerId: db.addPlayer("全部獲勝 " + i, undefined, i).id, teamId: "TEAM-01", participated: true, won: true, duration: 250
     }));
     for (const player of players) {
-      for (let step = 1; step <= GAMES.length; step++) {
-        const next = db.nextRoute(player.playerId)!;
-        assert.equal(next.step, step);
-        const row = game(db, next.gameId, false, 1, step);
-        assert.equal(settle(db, row, [player], "goal", 3250), true);
-        assert.equal(settle(db, row, [player], "goal", 3250), false);
+      for (const [index, gameInfo] of GAMES.slice(0, 10).entries()) {
+        const step = index + 1;
+        const row = game(db, gameInfo.id, false, 1, step);
+        assert.equal(settle(db, row, [{ ...player, step }], "goal", 3250), true);
+        assert.equal(settle(db, row, [{ ...player, step }], "goal", 3250), false);
       }
     }
-    assert.deepEqual(db.leaderboard().players.map(player => [player.completed, player.wins, player.totalScore]), Array(5).fill([20,20,100]));
-    assert.equal(db.leaderboard().teams[0].score, 100);
+    assert.deepEqual(db.leaderboard().players.map(player => [player.completed, player.wins, player.totalScore]), Array(5).fill([10,10,50]));
+    assert.equal(db.leaderboard().teams[0].score, 50);
     db.resetCompetition(70000);
     const losses = players.map(player => ({ ...player, won: false, duration: 60_000 }));
     for (const player of losses) {
-      db.ensureRoute(player.playerId);
-      for (let step = 1; step <= GAMES.length; step++) {
-        const next = db.nextRoute(player.playerId)!;
-        settle(db, game(db, next.gameId, false, 1, step), [player], "timeout", 63000);
+      for (const [index, gameInfo] of GAMES.slice(0, 10).entries()) {
+        const step = index + 1;
+        settle(db, game(db, gameInfo.id, false, 1, step), [{ ...player, step }], "timeout", 63000);
       }
     }
-    assert.deepEqual(db.leaderboard().players.map(player => [player.completed, player.losses, player.totalScore]), Array(5).fill([20,20,50]));
-    assert.equal(db.leaderboard().teams[0].score, 50);
+    assert.deepEqual(db.leaderboard().players.map(player => [player.completed, player.losses, player.totalScore]), Array(5).fill([10,10,25]));
+    assert.equal(db.leaderboard().teams[0].score, 25);
   } finally { db.close(); }
 });
 

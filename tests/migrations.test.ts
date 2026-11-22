@@ -40,9 +40,8 @@ test("upgrading a version-one database preserves its identity and initializes re
       assert.equal(archived.doublePoints,false);
       assert.equal(archived.baseAwarded,2);
       assert.deepEqual(archived.metrics,{});
-      store.ensureRoute("player");
-      assert.equal(store.nextRoute("player")?.step,1);
-      assert.equal(store.get<{ user_version: number }>("PRAGMA user_version")!.user_version,5);
+      assert.deepEqual(store.playedGames("player"),[]);
+      assert.equal(store.get<{ user_version: number }>("PRAGMA user_version")!.user_version,6);
       const stations = store.stationRows();
       assert.equal(stations.filter(station => station.floor === 3).length,10);
       assert.equal(stations.filter(station => station.floor === 4).length,10);

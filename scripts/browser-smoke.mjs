@@ -5,7 +5,6 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 import { chromium } from "playwright";
@@ -82,7 +81,7 @@ try {
   }
   await setChance(100);
 
-async function openHost(id) {
+  async function openHost(id) {
     const screen = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     track(screen);
     await screen.goto(origin + "/host?id=" + id);
@@ -91,100 +90,149 @@ async function openHost(id) {
     await screen.getByAltText("手機入場 QR Code").waitFor();
     return screen;
   }
-  const wrongHost = await openHost("HOST-01");
   const host = await openHost("HOST-10");
   const oldEntry = await freshEntry(host);
   const oldImage = await host.getByAltText("手機入場 QR Code").getAttribute("src");
-  const wrongEntry = await freshEntry(wrongHost);
-  const code = url => new URLSearchParams(new URL(url).hash.slice(1)).get("scan");
-  assert.notEqual(code(wrongEntry), code(oldEntry));
   assert.equal(new URL(oldEntry).searchParams.get("station"), "STATION-10");
   await freshEntry(host, oldEntry);
   assert.notEqual(await host.getByAltText("手機入場 QR Code").getAttribute("src"), oldImage);
 
-  const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-  track(phone);
-  await phone.goto(oldEntry);
-  await phone.getByRole("alert").getByText(/QR Code 已過期/).waitFor();
-  await phone.goto(origin + "/controller");
-  await phone.getByLabel("玩家名稱").fill("瀏覽器玩家");
-  await phone.getByRole("button", { name: "加入活動" }).click();
-  await phone.getByRole("heading", { name: "你的下一站" }).waitFor();
-  assert.match(await phone.locator(".route-card").innerText(), /0 \/ 20 關/);
-  assert.equal(await phone.getByRole("button", { name: "本層遊戲" }).count(), 0);
+  const players = await Promise.all(Array.from({ length: 4 }, (_, index) => browser.newPage({
+    viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true
+  }).then(page => {
+    track(page);
+    return { name: index ? "測試玩家 " + index : "瀏覽器玩家", page };
+  })));
+  await players[0].page.goto(oldEntry);
+  await players[0].page.getByRole("alert").getByText(/QR Code 已過期/).waitFor();
+  await Promise.all(players.map(async ({ name, page }) => {
+    await page.goto(origin + "/controller");
+    await page.getByLabel("玩家名稱").fill(name);
+    await page.getByRole("button", { name: "加入活動" }).click();
+    await page.getByRole("heading", { name: "準備下一關" }).waitFor();
+    assert.match(await page.locator(".route-card").innerText(), /0 \/ 10 關/);
+  }));
+  await Promise.all(players.map(({ page }) => page.getByRole("button", { name: "尋找對手" }).click()));
+  await Promise.all(players.map(({ page }) => page.getByRole("heading", { name: "前往對戰房間" }).waitFor()));
+  const phone = players[0].page;
   const mapLink = await phone.getByRole("link", { name: "查看房間位置" }).getAttribute("href");
+  assert.match(mapLink, /station=STATION-10/);
   await dashboard.goto(origin + mapLink);
   await dashboard.locator('.map-marker[data-destination="true"]').waitFor();
+  const wrongHost = await openHost("HOST-01");
+  const code = url => new URLSearchParams(new URL(url).hash.slice(1)).get("scan");
+  assert.notEqual(code(await freshEntry(wrongHost)), code(await freshEntry(host)));
+  await phone.goto(await freshEntry(wrongHost));
+  await phone.getByRole("alert").getByText(/本場請前往/).waitFor();
+  assert.equal(await phone.getByRole("button", { name: "我已準備好" }).count(), 0);
+  for (const { page } of players) {
+    await page.goto(await freshEntry(host));
+    await page.getByRole("button", { name: "我已準備好" }).click();
+  }
+  const panels = host.locator(".arena-panel");
+  await panels.nth(1).getByRole("heading").waitFor();
+  await host.getByText("2 對 2", { exact: true }).waitFor();
+  await Promise.all(players.map(async ({ page }) => {
+    await page.getByRole("button", { name: "A", exact: true }).waitFor();
+    assert.equal(await page.locator(".quiz-prompt, .board, .arcade, .arena-panel").count(), 0);
+  }));
+  assert.equal(await panels.count(), 2);
+  assert.equal(await panels.nth(0).locator(".arena-side-names span").count(), 2);
+  assert.equal(await panels.nth(1).locator(".arena-side-names span").count(), 2);
   for (const width of [390, 320]) {
     await phone.setViewportSize({ width, height: 844 });
     assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "controller overflow at " + width);
   }
   await phone.setViewportSize({ width: 390, height: 844 });
-
-  // Put mental arithmetic first in the isolated database so the touch scenario is deterministic.
-  const db = new DatabaseSync(join(temp, "test.sqlite"));
-  try {
-    db.exec("PRAGMA busy_timeout=5000; BEGIN IMMEDIATE;");
-    const playerId = db.prepare("SELECT player_id FROM players WHERE player_name=?").get("瀏覽器玩家").player_id;
-    const all = db.prepare("SELECT * FROM player_routes WHERE player_id=? ORDER BY step").all(playerId);
-    const first = all.findIndex(row => row.game_id === "game-10");
-    [all[0], all[first]] = [all[first], all[0]];
-    db.prepare("DELETE FROM player_routes WHERE player_id=?").run(playerId);
-    const add = db.prepare("INSERT INTO player_routes(competition_id,player_id,step,game_id,seed) VALUES (?,?,?,?,?)");
-    all.forEach((row, index) => add.run(row.competition_id, playerId, index + 1, row.game_id, row.seed));
-    db.exec("COMMIT");
-  } finally { db.close(); }
-  await phone.goto(await freshEntry(wrongHost));
-  await phone.getByRole("alert").getByText(/這一關請前往/).waitFor();
-  await phone.getByRole("heading", { name: "心算挑戰" }).waitFor();
-  assert.equal(await phone.getByRole("button", { name: "我已準備好" }).count(), 0);
-  if (process.env.CAMPUS_SCREENSHOTS) {
-    await phone.goto(origin + "/controller");
-    await phone.getByRole("heading", { name: "你的下一站" }).waitFor();
-    await phone.screenshot({ path: "test-results/phone-route.png", animations: "disabled" });
+  for (const [width, height] of [[1440,900],[1024,768],[768,768]]) {
+    await host.setViewportSize({ width, height });
+    assert.equal(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "host overflow at " + width);
   }
+  await host.setViewportSize({ width: 1440, height: 900 });
 
-  await phone.goto(await freshEntry(host));
-  await phone.getByRole("button", { name: "我已準備好" }).click();
-  const prompt = phone.locator(".quiz-prompt");
-  await prompt.waitFor();
-  await host.getByText("在手機進行個人任務").waitFor();
-  assert.equal(await host.locator(".quiz-prompt").count(), 0);
-  const question = await prompt.innerText();
+  const originalSeat = await phone.locator(".remote-player strong").innerText();
   await phone.reload();
-  await prompt.waitFor();
-  assert.equal(await prompt.innerText(), question);
-  await phone.getByText("你抽中了雙倍挑戰").waitFor({ timeout: 18_000 });
-  await host.getByText("瀏覽器玩家 抽中雙倍挑戰").waitFor();
-  if (process.env.CAMPUS_SCREENSHOTS) {
-    await phone.screenshot({ path: "test-results/phone-double.png", animations: "disabled" });
-    await host.screenshot({ path: "test-results/host-private.png", animations: "disabled" });
+  await phone.getByRole("button", { name: "A", exact: true }).waitFor();
+  assert.equal(await phone.locator(".remote-player strong").innerText(), originalSeat);
+  const sides = [[], []];
+  for (const player of players) {
+    const side = Number(await player.page.locator(".remote-player").getAttribute("data-side"));
+    sides[side].push(player);
   }
-  for (let i = 0; i < 4; i++) {
-    await prompt.waitFor();
-    const [left, operator, right] = (await prompt.innerText()).split(" ");
+  const firstSide = Number(await phone.locator(".remote-player").getAttribute("data-side"));
+  const winners = sides[firstSide], losers = sides[1-firstSide];
+  const winnerBoard = panels.nth(firstSide), loserBoard = panels.nth(1-firstSide);
+  const attempted = async (panel, count) => eventually(async () => assert.equal(await panel.locator(".quiz-meta strong").first().innerText(), String(count)));
+  async function tapAnswer(player, panel, correct = true) {
+    const text = await panel.locator(".quiz-prompt").innerText();
+    const [left, operator, right] = text.split(" ");
     const a = Number(left), b = Number(right);
-    const answer = operator === "+" ? a+b : operator === "−" ? a-b : operator === "×" ? a*b : a/b;
+    const answer = operator === "+" ? a + b : operator === "−" ? a - b : operator === "×" ? a * b : a / b;
     assert.ok(Number.isInteger(answer));
-    await phone.getByRole("button", { name: String(answer), exact: true }).tap();
-    if (i < 3) await eventually(async () => {
-      assert.equal(await phone.locator(".progress strong").innerText(), (i+1) + " / 4");
-    });
+    const options = await panel.locator(".arena-options > div span").allInnerTexts();
+    const index = options.findIndex(value => Number(value) === answer);
+    assert.ok(index >= 0);
+    const letter = "ABCD"[correct ? index : (index + 1) % options.length];
+    await player.page.getByRole("button", { name: letter, exact: true }).tap();
   }
-  await phone.getByRole("heading", { name: "闖關成功" }).waitFor();
-  assert.equal((await phone.locator(".result-points").innerText()).trim(), "+4 分");
-  await host.getByText("闖關成功", { exact: true }).waitFor();
-  await phone.getByRole("button", { name: "查看下一站" }).click();
-  assert.match(await phone.locator(".route-card").innerText(), /1 \/ 20 關/);
-  assert.match(await phone.locator(".route-card").innerText(), /第 2 關/);
+  if (process.env.CAMPUS_SCREENSHOTS) {
+    await phone.screenshot({ path: "test-results/phone-remote.png", animations: "disabled" });
+    await host.screenshot({ path: "test-results/host-doubles.png", animations: "disabled" });
+  }
+  for (const [index, player] of losers.entries()) {
+    await tapAnswer(player, loserBoard, false);
+    await attempted(loserBoard, index + 1);
+  }
+  await tapAnswer(winners[0], winnerBoard);
+  await attempted(winnerBoard, 1);
+  await host.getByText(/抽中雙倍挑戰/).waitFor({ timeout: 18_000 });
+  for (let i = 1; i < 4; i++) {
+    await tapAnswer(winners[i % 2], winnerBoard);
+    if (i < 3) await attempted(winnerBoard, i + 1);
+  }
+  await host.getByText(firstSide === 0 ? "藍方獲勝" : "橙方獲勝", { exact: true }).waitFor();
+  await Promise.all(winners.map(({ page }) => page.getByRole("heading", { name: "闖關成功" }).waitFor()));
+  await Promise.all(losers.map(({ page }) => page.getByRole("heading", { name: "挑戰失敗" }).waitFor()));
+  assert.match(await phone.locator(".result-points").innerText(), /\+[24] 分/);
+  await phone.getByRole("button", { name: "繼續闖關" }).click();
+  assert.match(await phone.locator(".route-card").innerText(), /1 \/ 10 關/);
   await phone.getByRole("button", { name: "我的闖關紀錄" }).click();
   await phone.getByRole("dialog").getByText("1 · 心算挑戰").waitFor();
 
   await dashboard.goto(origin + "/leaderboard");
-  await dashboard.getByRole("row", { name: /瀏覽器玩家/ }).waitFor();
-  assert.equal(await dashboard.locator(".em-score").first().innerText(), "4");
+  assert.match(await dashboard.getByRole("row", { name: /瀏覽器玩家/ }).innerText(), /1 \/ 10/);
   await dashboard.getByRole("button", { name: "隊伍排行" }).click();
   assert.equal(await dashboard.locator("tbody tr").count(), 10);
+
+  await wrongHost.close();
+  const pipeHost = await openHost("HOST-03");
+  const rival = losers[0].page;
+  await Promise.all([phone, rival].map(async page => {
+    await page.goto(origin + "/controller");
+    await page.getByRole("button", { name: "繼續闖關" }).click();
+    await page.getByRole("button", { name: "尋找對手" }).click();
+    await page.getByRole("heading", { name: "前往對戰房間" }).waitFor({ timeout: 15_000 });
+    assert.match(await page.locator(".route-card").innerText(), /水管拼接/);
+    await page.goto(await freshEntry(pipeHost));
+    await page.getByRole("button", { name: "我已準備好" }).click();
+  }));
+  const direction = phone.getByRole("button", { name: "向下" });
+  await direction.waitFor();
+  const pipeSide = Number(await phone.locator(".remote-player").getAttribute("data-side"));
+  const activePipe = pipeHost.locator(".arena-panel").nth(pipeSide);
+  const cursorIndex = () => activePipe.locator(".arena-cursor").evaluate(tile => Array.from(tile.parentElement.children).indexOf(tile));
+  const before = await cursorIndex();
+  const bounds = await direction.boundingBox();
+  await phone.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await phone.mouse.down();
+  await eventually(async () => assert.equal(await cursorIndex(), before + 6));
+  await phone.mouse.up();
+  await phone.getByRole("button", { name: "確認", exact: true }).tap();
+  assert.equal(await phone.locator(".board").count(), 0);
+  if (process.env.CAMPUS_SCREENSHOTS) {
+    await pipeHost.screenshot({ path: "test-results/host-pipe-duel.png", animations: "disabled" });
+    await phone.screenshot({ path: "test-results/phone-direction.png", animations: "disabled" });
+  }
 
   if (!process.env.SKIP_BROWSER_ADMIN) {
     await dashboard.goto(origin + "/admin");
@@ -207,7 +255,7 @@ async function openHost(id) {
     await dashboard.getByText("雙倍挑戰機率已更新").waitFor();
   }
   assert.deepEqual(consoleErrors, []);
-  console.log("Browser smoke passed: both clean floor plans, widths 320–1440, QR rotation and expiration, wrong-room rejection, touch input, persistent personal route, private game, double challenge and both rankings."
+  console.log("Browser smoke passed: both floors, QR rotation, wrong-room rejection, 2 vs 2 with four mobile remotes, split-screen questions, reconnect, weighted result and rankings."
     + (!process.env.SKIP_BROWSER_ADMIN ? " Admin audit and CSV checked." : ""));
 } catch (error) {
   console.error(output);
