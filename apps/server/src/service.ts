@@ -5,13 +5,12 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import { Server } from "socket.io";
 import { z } from "zod";
-import { GAMES, gameById, NUMBER_HUNT_ID, PLAYER_LIMIT, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
+import { GAMES, gameById, PLAYER_LIMIT } from "../../../packages/shared/catalog";
 import {
   type Ack, type ClientEvents, type ServerEvents, floorSchema, hostIdSchema, inputSchema, keySchema, nameSchema, registrationSchema,
   sessionIdSchema, stationIdSchema, stationQrSchema, studentLoginSchema, studentNumberSchema, teamIdSchema
 } from "../../../packages/shared/protocol";
 import type { PluginFactory } from "../../../packages/game-sdk";
-import { HOST_SCREEN_VERSION } from "../../../packages/shared/rules";
 import { Campus, type PeerData } from "./campus";
 import { entryUrl, hostKey, matchesSecret, webOrigin, type Configuration } from "./config";
 import { Practice } from "./practice";
@@ -216,13 +215,8 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
     }),
       body, ack, data => {
         if (!matchesSecret(data.key, hostKey(config.hostSecret, data.hostId))) throw new RequestError("主機金鑰不正確", "unauthorized", 401);
-        const legacyScreen = data.screenVersion === 2 && !store.get(
-          "SELECT 1 FROM hosts WHERE host_id=? AND assigned_game_id=?", data.hostId, VOLLEYBALL_ID
-        );
-        if (data.screenVersion !== HOST_SCREEN_VERSION && !legacyScreen) {
-          throw new RequestError("請重新整理大螢幕頁面，載入新版對戰畫面", "host-refresh", 409);
-        }
-        return campus.registerHost(socket, data.hostId, webOrigin(data.entryOrigin ?? socket.handshake.headers.origin ?? ""));
+        return campus.registerHost(socket, data.hostId, data.screenVersion ?? 0,
+          webOrigin(data.entryOrigin ?? socket.handshake.headers.origin ?? ""));
       }));
     socket.on("admin:watch", (body, ack) => accept(z.object({ key: keySchema }), body, ack, data => {
       if (!matchesSecret(data.key, config.adminKey)) throw new RequestError("管理金鑰不正確", "unauthorized", 401);
@@ -421,9 +415,11 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
       ]);
       return;
     }
-    const hasNumberHunt = store.get("SELECT 1 FROM official_results WHERE competition_id=? AND game_id=? LIMIT 1",
-      competitionId, NUMBER_HUNT_ID);
-    const games = hasNumberHunt ? [...GAMES, gameById.get(NUMBER_HUNT_ID)!] : GAMES;
+    const activeIds = new Set(GAMES.map(game => game.id));
+    const retired = store.all<{ game_id: string }>("SELECT DISTINCT game_id FROM official_results WHERE competition_id=? ORDER BY game_id", competitionId)
+      .filter(row => !activeIds.has(row.game_id))
+      .flatMap(row => gameById.get(row.game_id) ?? []);
+    const games = [...GAMES, ...retired];
     const rows: (string|number)[][] = [
       ["名次", "玩家ID", "玩家", "隊伍", "完成", "勝", "和", "負", "單人分", "多人分", "總分",
         ...games.map(game => game.name + " 結果"), ...games.map(game => game.name + " 得分"),

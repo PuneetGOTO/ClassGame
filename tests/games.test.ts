@@ -108,27 +108,6 @@ test("06 Maze Muncher collects 12 reachable dots", () => {
   }
   assert.ok(game.checkWin("a"));
 });
-test("07 Cross Road can reach the far bank through moving traffic", () => {
-  const seed = 57;
-  const create = plugins.get("game-07")!;
-  const context = { playerIds: ["a"], seed };
-  const game = create(context);
-  let elapsed = 0;
-  for (; elapsed < 60_000 && !game.checkWin("a"); elapsed += 120) {
-    game.tick(frame(elapsed));
-    const player = (game.getState() as Arcade).actors.at(-1)!;
-    for (const direction of ["up","right","left"] as const) {
-      const trial = create(context,game.serialize());
-      if (!trial.handleInput("a",move(direction),frame(elapsed))) continue;
-      trial.tick(frame(elapsed + 120));
-      const after = (trial.getState() as Arcade).actors.at(-1)!;
-      const valid = direction === "up" ? after.y < player.y
-        : after.y === player.y && after.x !== player.x;
-      if (valid) { game.handleInput("a",move(direction),frame(elapsed)); break; }
-    }
-  }
-  assert.ok(game.checkWin("a"), "road did not complete by " + elapsed);
-});
 test("08 Star Defender's real projectiles can defeat eight moving enemies", () => {
   const game = factory(8);
   let elapsed = 0;

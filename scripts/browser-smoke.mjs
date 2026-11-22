@@ -47,6 +47,7 @@ try {
   await dashboard.getByRole("heading", { name: "樓層地圖", exact: true }).waitFor({ state: "attached" });
   await eventually(async () => assert.equal(await dashboard.locator(".map-marker").count(), 10));
   await dashboard.getByRole("img",{ name: "三樓平面圖" }).waitFor();
+  await dashboard.getByRole("button", { name: /308 室 · 霓虹氣墊球/ }).waitFor();
   await dashboard.getByRole("button", { name: "4 樓", exact: true }).click();
   await dashboard.getByRole("img",{ name: "四樓平面圖" }).waitFor();
   assert.equal(await dashboard.getByRole("img",{ name: "四樓平面圖" }).evaluate(canvas => canvas.getContext("2d").getImageData(450,850,1,1).data[3]),255);
@@ -103,7 +104,7 @@ try {
     viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true
   }).then(page => {
     track(page);
-    return { name: index ? "測試玩家 " + index : "瀏覽器玩家", page, actions: watchActions(page, "game:input") };
+    return { name: index ? "測試玩家 " + index : "瀏覽器玩家", page };
   })));
   await players[0].page.goto(oldEntry);
   await players[0].page.getByRole("alert").getByText(/QR Code 已過期/).waitFor();
@@ -341,7 +342,11 @@ try {
 
     await dashboard.getByRole("button", { name: "測試遊戲" }).click();
     let practiceCourt;
-    dashboard.context().once("page", page => { practiceCourt = watchVolleyballCourt(page, "practice:state"); });
+    let practiceHockey;
+    dashboard.context().once("page", page => {
+      practiceCourt = watchVolleyballCourt(page, "practice:state");
+      practiceHockey = watchCourt(page, "practice:state", "air-hockey");
+    });
     const [practiceScreen] = await Promise.all([
       dashboard.waitForEvent("popup"),
       dashboard.getByRole("link", { name: "開啟測試大螢幕" }).click()
@@ -394,6 +399,7 @@ try {
     assert.equal(await practicePhones[1].getByRole("alert").count(), 0);
     assert.equal(await practicePhones[0].locator("select option").count(), 20);
     assert.equal(await practicePhones[0].locator("option[value='game-19']").count(), 0);
+    assert.equal(await practicePhones[0].locator("option[value='game-07']").count(), 0);
     await practiceScreen.getByRole("heading", { name: "史萊姆排球", exact: true }).waitFor();
     await practiceScreen.getByRole("button", { name: "開始測試" }).click();
     await practiceScreen.getByLabel("史萊姆排球實況畫面").waitFor();
@@ -404,6 +410,19 @@ try {
     if (process.env.CAMPUS_SCREENSHOTS) {
       await practiceScreen.screenshot({ path: "test-results/volleyball-screen.png", animations: "disabled" });
       await practicePhones[0].screenshot({ path: "test-results/volleyball-controller.png", animations: "disabled" });
+    }
+    await practiceScreen.getByRole("button", { name: "結束這局" }).click();
+    await practicePhones[0].getByLabel("選擇遊戲").selectOption("game-22");
+    await practicePhones[1].getByRole("heading", { name: "霓虹氣墊球", exact: true }).waitFor();
+    await practiceScreen.getByRole("button", { name: "開始測試" }).click();
+    await practiceScreen.getByLabel("霓虹氣墊球實況畫面").waitFor();
+    assert.deepEqual(await practiceScreen.locator(".airhockey-score").allTextContents(), ["0", "0"]);
+    await eventually(() => assert.equal(practiceHockey()?.paddles.length, 2));
+    await checkAirHockeyRemote(practicePhones[0], practiceHockey);
+    await checkAirHockeyRemote(practicePhones[1], practiceHockey);
+    if (process.env.CAMPUS_SCREENSHOTS) {
+      await practiceScreen.screenshot({ path: "test-results/air-hockey-screen.png", animations: "disabled" });
+      await practicePhones[0].screenshot({ path: "test-results/air-hockey-controller.png", animations: "disabled" });
     }
     await practiceScreen.getByRole("button", { name: "結束這局" }).click();
     await practicePhones[0].getByLabel("選擇遊戲").selectOption("game-10");
@@ -492,30 +511,32 @@ try {
     }
     assert.equal((await (await fetch(origin + "/api/campus")).json()).leaderboard.players.length, 6);
 
-    // The same control surface must work in an actual, QR-gated station match.
     await Promise.all([host.close(), pipeHost.close()]);
-    let stationCourt;
-    const volleyballHost = await openHost("HOST-19", page => { stationCourt = watchVolleyballCourt(page, "game:state"); });
+    let stationHockey;
+    const hockeyHost = await openHost("HOST-07", page => { stationHockey = watchCourt(page, "game:state", "air-hockey"); });
     await eventually(async () => {
       const campus = await (await fetch(origin + "/api/campus")).json();
-      assert.deepEqual(campus.stations.filter(station => station.online).map(station => station.hostId), ["HOST-19"]);
+      assert.deepEqual(campus.stations.filter(station => station.online).map(station => station.hostId), ["HOST-07"]);
     });
-    await Promise.all([phone, rival].map(async page => {
+    await Promise.all(players.map(async ({ page }) => {
       await page.goto(origin + "/controller");
       await page.getByRole("button", { name: "尋找對手" }).tap();
       await page.getByRole("heading", { name: "前往對戰房間" }).waitFor({ timeout: 15_000 });
-      await page.goto(await freshEntry(volleyballHost));
+      await page.goto(await freshEntry(hockeyHost));
       await page.getByRole("button", { name: "我已準備好" }).tap();
     }));
-    await volleyballHost.getByLabel("史萊姆排球實況畫面").waitFor();
-    await checkVolleyballRemote(phone, players[0].actions, stationCourt);
+    await hockeyHost.getByLabel("霓虹氣墊球實況畫面").waitFor();
+    await hockeyHost.getByText("2 對 2", { exact: true }).waitFor();
+    await eventually(() => assert.equal(stationHockey()?.paddles.length, 4));
+    await checkAirHockeyRemote(phone, stationHockey);
     if (process.env.CAMPUS_SCREENSHOTS) {
-      await phone.screenshot({ path: "test-results/volleyball-station-controller.png", animations: "disabled" });
+      await hockeyHost.screenshot({ path: "test-results/air-hockey-station.png", animations: "disabled" });
+      await phone.screenshot({ path: "test-results/air-hockey-station-controller.png", animations: "disabled" });
     }
   }
   assert.deepEqual(consoleErrors, []);
   console.log("Browser smoke passed: both floors, QR rotation, wrong-room rejection, 2 vs 2 with four mobile remotes, split-screen questions, reconnect, weighted result and rankings."
-    + (!process.env.SKIP_BROWSER_ADMIN ? " Admin, CSV, practice QR pairing and volleyball multitouch checked." : ""));
+    + (!process.env.SKIP_BROWSER_ADMIN ? " Admin, CSV, practice QR pairing, volleyball and air hockey controls checked." : ""));
 } catch (error) {
   console.error(output);
   throw error;
@@ -556,13 +577,18 @@ function watchActions(page, event) {
   return actions;
 }
 
-function watchVolleyballCourt(page, event) {
+function watchCourt(page, event, kind) {
   let latest;
   watchSocketEvent(page, "framereceived", event, data => {
     const scene = (data.panels ?? data.match?.panels)?.[0]?.scene;
-    if (scene?.kind === "volleyball") latest = scene;
+    if (scene?.kind === kind) latest = scene;
   });
-  return side => latest?.players.find(player => player.side === side);
+  return () => latest;
+}
+
+function watchVolleyballCourt(page, event) {
+  const read = watchCourt(page, event, "volleyball");
+  return side => read()?.players.find(player => player.side === side);
 }
 
 async function checkVolleyballRemote(page, actions, court) {
@@ -610,6 +636,39 @@ async function checkVolleyballRemote(page, actions, court) {
     await touch("touchEnd");
     await eventually(async () => assert.equal(await stick.getAttribute("aria-valuenow"), "0"));
     await eventually(() => assert.deepEqual(actions.slice(index + 4), ["hold-right", "release"]));
+  } finally {
+    await cdp.detach();
+  }
+}
+
+async function checkAirHockeyRemote(page, court) {
+  const stick = page.getByRole("application", { name: "球拍搖桿" });
+  await stick.waitFor();
+  for (const [width, height] of [[320, 568], [844, 390], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    const bounds = await stick.boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width && bounds.y + bounds.height <= height,
+      "hockey stick must fit in " + width + " × " + height);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  }
+  assert.equal(await page.locator("canvas").count(), 0);
+  const side = Number(await page.locator(".remote-player").getAttribute("data-side"));
+  const direction = side === 0 ? 1 : -1;
+  const bounds = await stick.boundingBox();
+  const center = { x: Math.round(bounds.x + bounds.width / 2), y: Math.round(bounds.y + bounds.height / 2) };
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [center] });
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove", touchPoints: [{ x: center.x + 36 * direction, y: center.y - 32 }]
+    });
+    await eventually(() => assert.ok(court()?.paddles.some(paddle => paddle.side === side && direction * paddle.vx > 20 && paddle.vy < -20)));
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await eventually(async () => assert.equal(await stick.getAttribute("data-dragging"), "false"));
+    await eventually(() => {
+      const paddles = court()?.paddles.filter(paddle => paddle.side === side);
+      assert.ok(paddles?.length && paddles.every(paddle => paddle.vx === 0 && paddle.vy === 0));
+    });
   } finally {
     await cdp.detach();
   }

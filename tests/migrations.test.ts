@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { migrations } from "../apps/server/src/migrations";
 import { Store } from "../apps/server/src/store";
-import { NUMBER_HUNT_ID, VOLLEYBALL_ID } from "../packages/shared/catalog";
+import { AIR_HOCKEY_ID, CROSS_ROAD_ID, NUMBER_HUNT_ID, VOLLEYBALL_ID } from "../packages/shared/catalog";
 import { planPosition } from "../packages/shared/floors";
 
 test("upgrading a version-one database preserves its identity and initializes result metrics", async () => {
@@ -42,7 +42,7 @@ test("upgrading a version-one database preserves its identity and initializes re
       assert.equal(archived.baseAwarded,2);
       assert.deepEqual(archived.metrics,{});
       assert.deepEqual(store.playedGames("player"),[]);
-      assert.equal(store.get<{ user_version: number }>("PRAGMA user_version")!.user_version,9);
+      assert.equal(store.get<{ user_version: number }>("PRAGMA user_version")!.user_version,10);
       assert.equal(store.player("player")?.student_no,null);
       assert.equal(store.selfRegistration(),true);
       const stations = store.stationRows();
@@ -57,7 +57,10 @@ test("upgrading a version-one database preserves its identity and initializes re
   } finally { await rm(directory,{ recursive: true,force: true }); }
 });
 
-test("version nine swaps the room and preserves Number Hunt's official points", async () => {
+for (const { priorVersion, retired, replacement, host, station, name } of [
+  { priorVersion: 8, retired: NUMBER_HUNT_ID, replacement: VOLLEYBALL_ID, host: "HOST-19", station: "STATION-19", name: "數字推理" },
+  { priorVersion: 9, retired: CROSS_ROAD_ID, replacement: AIR_HOCKEY_ID, host: "HOST-07", station: "STATION-07", name: "穿越馬路" }
+]) test("station migration preserves official points for " + name, async () => {
   const directory = await mkdtemp(join(tmpdir(), "campus-retire-game-"));
   const path = join(directory, "game.sqlite");
   try {
@@ -65,31 +68,31 @@ test("version nine swaps the room and preserves Number Hunt's official points", 
     const player = old.addPlayer("舊關卡玩家", undefined, 1000).id;
     const edition = old.competitionId;
     try {
-      old.run("INSERT INTO games(game_id,game_name,category,mode,time_limit,plugin_path,win_condition) VALUES (?,?, 'math','solo',60,?,?)",
-        NUMBER_HUNT_ID, "數字推理", "local-games/game-19", "完成題組");
-      old.run("UPDATE hosts SET assigned_game_id=? WHERE host_id='HOST-19'", NUMBER_HUNT_ID);
-      old.run("DELETE FROM games WHERE game_id=?", VOLLEYBALL_ID);
+      old.run("INSERT INTO games(game_id,game_name,category,mode,time_limit,plugin_path,win_condition) VALUES (?,?, 'adventure','solo',60,?,?)",
+        retired, name, "local-games/" + retired, "完成目標");
+      old.run("UPDATE hosts SET assigned_game_id=? WHERE host_id=?", retired, host);
+      old.run("DELETE FROM games WHERE game_id=?", replacement);
       old.run(`INSERT INTO game_sessions(session_id,competition_id,game_id,station_id,host_id,round_no,created_at,ended_at,status,seed,match_tier)
-        VALUES ('retired-result',?,?,'STATION-19','HOST-19',1,10,100,'finished',1,1),
-          ('retired-wait',?,?,'STATION-19','HOST-19',1,200,NULL,'lobby',1,1)`, edition, NUMBER_HUNT_ID, edition, NUMBER_HUNT_ID);
+        VALUES ('retired-result',?,?,?,?,1,10,100,'finished',1,1),
+          ('retired-wait',?,?,?,?,1,200,NULL,'lobby',1,1)`, edition, retired, station, host, edition, retired, station, host);
       old.run(`INSERT INTO game_results(result_id,session_id,competition_id,player_id,game_id,team_id,round_no,participated,
         win_or_lose,raw_points,awarded_units,duration,created_at,route_step,match_weight)
-        VALUES (1,'retired-result',?,?,?,'TEAM-01',1,1,'win',2,10,90,100,1,1)`, edition, player, NUMBER_HUNT_ID);
-      old.run("INSERT INTO official_results VALUES (?,?,?,1)", edition, player, NUMBER_HUNT_ID);
+        VALUES (1,'retired-result',?,?,?,'TEAM-01',1,1,'win',2,10,90,100,1,1)`, edition, player, retired);
+      old.run("INSERT INTO official_results VALUES (?,?,?,1)", edition, player, retired);
       old.run("INSERT INTO session_members(session_id,player_id,team_id,checked_in,route_step) VALUES ('retired-wait',?,'TEAM-01',1,2)", player);
       old.refreshPlayerScore(player, edition);
-      old.db.exec("PRAGMA user_version=8");
+      old.db.exec("PRAGMA user_version=" + priorVersion);
     } finally { old.close(); }
 
     const upgraded = new Store(path, 2000);
     try {
       assert.equal(upgraded.competitionId, edition);
-      assert.equal(upgraded.stationRows().find(station => station.hostId === "HOST-19")?.gameId, VOLLEYBALL_ID);
-      assert.equal(upgraded.get<{ enabled: number }>("SELECT enabled FROM games WHERE game_id=?", NUMBER_HUNT_ID)?.enabled, 0);
+      assert.equal(upgraded.stationRows().find(item => item.hostId === host)?.gameId, replacement);
+      assert.equal(upgraded.get<{ enabled: number }>("SELECT enabled FROM games WHERE game_id=?", retired)?.enabled, 0);
       assert.equal(upgraded.get<{ count: number }>("SELECT COUNT(*) AS count FROM games WHERE enabled=1")?.count, 20);
       assert.equal(upgraded.get<{ status: string }>("SELECT status FROM game_sessions WHERE session_id='retired-wait'")?.status, "cancelled");
       assert.equal(upgraded.get<{ player_id: string }>("SELECT player_id FROM match_search")?.player_id, player);
-      assert.equal(upgraded.officialFor(player)[0]?.gameId, NUMBER_HUNT_ID);
+      assert.equal(upgraded.officialFor(player)[0]?.gameId, retired);
       assert.equal(upgraded.leaderboard().players[0]?.totalScore, 2);
       assert.equal(upgraded.get("PRAGMA foreign_key_check"), undefined);
     } finally { upgraded.close(); }

@@ -92,6 +92,8 @@ export async function harness(dbPath = ":memory:", start = 100_000, realTime = f
         : { kind: "answer", questionId: question.id, value: "1" }];
     } else if (scene.kind === "arcade" && scene.theme !== "road") {
       inputs = [{ kind: "action", action: scene.theme === "space" ? "shoot" : "jump" }];
+    } else if (scene.kind === "air-hockey") {
+      inputs = [{ kind: "stick", x: 0.8, y: 0 }];
     }
     for (const action of inputs) {
       await control({ socket: client, id }, action);

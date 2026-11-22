@@ -1,9 +1,10 @@
 import { randomInt, randomUUID } from "node:crypto";
 import type { Server, Socket } from "socket.io";
-import { COUNTDOWN_MS, GAME_MS, GAMES, gameById } from "../../../packages/shared/catalog";
+import { AIR_HOCKEY_ID, COUNTDOWN_MS, GAME_MS, GAMES, gameById, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
 import { floorLabel, type Floor } from "../../../packages/shared/floors";
 import {
-  DOUBLE_END_MS, DOUBLE_START_MS, MATCH_ARRIVAL_MS, MATCH_WAIT_MS, MIN_MATCH_PLAYERS, SCREEN_RECONNECT_MS, STATION_SCAN_GRANT_MS
+  DOUBLE_END_MS, DOUBLE_START_MS, HOST_SCREEN_VERSION, MATCH_ARRIVAL_MS, MATCH_WAIT_MS, MIN_MATCH_PLAYERS,
+  SCREEN_RECONNECT_MS, STATION_SCAN_GRANT_MS
 } from "../../../packages/shared/rules";
 import { completedRouteSteps, ROUTE_LENGTH, routeTier, type Difficulty } from "../../../packages/shared/route";
 import type { PracticeRole } from "../../../packages/shared/practice";
@@ -18,13 +19,15 @@ import { Arena, matchMode } from "./arena";
 import { selectMatch, type Candidate, type MatchChoice } from "./matchmaking";
 import { validStudentCode } from "./student-codes";
 
-export type PeerData = { playerId?: string; hostId?: string; entryOrigin?: string; practiceRole?: PracticeRole;
+export type PeerData = { playerId?: string; hostId?: string; hostScreenVersion?: number; entryOrigin?: string; practiceRole?: PracticeRole;
   stationScan?: { stationId: string; hostConnection: string; expiresAt: number } };
 export type CampusSocket = Socket<ClientEvents, ServerEvents, Record<string, never>, PeerData>;
 export type CampusIO = Server<ClientEvents, ServerEvents, Record<string, never>, PeerData>;
 interface Room { row: SessionRow; members: Map<string, MemberRow>; arena?: Arena }
 const resultDisplayMs = 5000;
 const clockCheckpointMs = 1000;
+const hostRefreshMessage = "請重新整理大螢幕頁面，載入新版對戰畫面";
+const minimumScreenVersion = (gameId: string) => gameId === AIR_HOCKEY_ID ? 4 : gameId === VOLLEYBALL_ID ? 3 : 2;
 
 export class Campus {
   private readonly rooms = new Map<string, Room>();
@@ -303,17 +306,21 @@ export class Campus {
     this.store.run("UPDATE players SET connected=0 WHERE player_id=?", id);
     this.mark();
   }
-  registerHost(socket: CampusSocket, hostId: string, origin?: string) {
+  registerHost(socket: CampusSocket, hostId: string, screenVersion: number, origin?: string) {
+    const station = this.store.stationRows().find(row => row.hostId === hostId)!;
+    if (screenVersion < minimumScreenVersion(station.gameId) || screenVersion > HOST_SCREEN_VERSION) {
+      throw new RequestError(hostRefreshMessage, "host-refresh", 409);
+    }
     if (socket.data.hostId === hostId && this.hosts.get(hostId) === socket) return this.hostView(hostId, socket.data.entryOrigin);
     this.requireFreeSocket(socket);
     const old = this.hosts.get(hostId);
     socket.data.hostId = hostId;
+    socket.data.hostScreenVersion = screenVersion;
     socket.data.entryOrigin = origin;
     this.hosts.set(hostId, socket);
     old?.emit("system:error", { error: "這台主機已在另一個分頁或裝置登記", code: "host-replaced" });
     old?.disconnect(true);
     this.store.run("UPDATE hosts SET connection_status=1 WHERE host_id=?", hostId);
-    const station = this.hostView(hostId, origin).station;
     const room = this.rooms.get(station.id);
     if (room?.row.status === "lobby") this.maybeStart(room);
     else if (room) this.advance(room, this.now());
@@ -872,6 +879,13 @@ export class Campus {
       for (const stationId of new Set([id, target.id])) {
         this.lastAtStation.get(stationId)?.arena?.destroy();
         this.lastAtStation.delete(stationId);
+      }
+      for (const [hostId, gameId] of [[settings.hostId, source.gameId], [source.hostId, target.gameId]]) {
+        const socket = this.hosts.get(hostId);
+        if (socket && (socket.data.hostScreenVersion ?? 0) < minimumScreenVersion(gameId)) {
+          socket.emit("system:error", { code: "host-refresh", error: hostRefreshMessage });
+          socket.disconnect(true);
+        }
       }
     }
     this.mark();

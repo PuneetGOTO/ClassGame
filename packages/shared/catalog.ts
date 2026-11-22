@@ -6,12 +6,14 @@ export const GAME_MS = 60_000;
 export const COUNTDOWN_MS = 3_000;
 export const LOBBY_MS = 90_000;
 export const SCORE_SCALE = TEAM_SIZE;
+export const CROSS_ROAD_ID = "game-07";
 export const NUMBER_HUNT_ID = "game-19";
 export const VOLLEYBALL_ID = "game-21";
+export const AIR_HOCKEY_ID = "game-22";
 
 export type Category = "puzzle" | "adventure" | "math";
 export type Mode = "solo" | "co-op" | "team-quiz";
-export type Controls = "directions" | "cell" | "traffic" | "flight" | "runner" | "quest" | "answer" | "expression" | "volleyball";
+export type Controls = "directions" | "cell" | "traffic" | "flight" | "runner" | "quest" | "answer" | "expression" | "volleyball" | "air-hockey";
 
 export interface GameInfo {
   id: string;
@@ -45,19 +47,20 @@ const entries = [
   ["數學快答", "Math Duel", "math", "solo", "answer", "輸入每題的答案，在限時內答對指定題數。"],
   ["數字推理", "Number Hunt", "math", "solo", "answer", "根據線索找出指定數量的神秘數字。"],
   ["數學破磚", "Math Breakout", "math", "solo", "answer", "每答對一題擊碎一塊磚，把所有磚塊擊碎。"],
-  ["史萊姆排球", "Slime Volleyball", "adventure", "solo", "volleyball", "左右移動並跳躍將排球擊向對手半場落地得分，60 秒結束時分數較高一方獲勝。"]
+  ["史萊姆排球", "Slime Volleyball", "adventure", "solo", "volleyball", "左右移動並跳躍將排球擊向對手半場落地得分，60 秒結束時分數較高一方獲勝。"],
+  ["霓虹氣墊球", "Air Hockey", "adventure", "solo", "air-hockey", "拖動手機搖桿，把冰球打進對方球門。先進 5 球勝出，60 秒到時比較比分。"]
 ] as const;
 
 const catalog: GameInfo[] = entries.map(([name, english, category, mode, controls, objective], i) => ({
   id: `game-${String(i + 1).padStart(2, "0")}`, name, english, category, mode, controls, objective,
-  ...(controls === "volleyball" ? { sharedArena: true } : {})
+  ...(controls === "volleyball" || controls === "air-hockey" ? { sharedArena: true } : {})
 }));
-const volleyball = catalog.find(game => game.id === VOLLEYBALL_ID)!;
-export const GAMES = catalog.slice(0, STATION_COUNT).map(game => game.id === NUMBER_HUNT_ID ? volleyball : game);
+// Retired titles remain available for result history and CSV exports.
+export const gameById = new Map(catalog.map(game => [game.id, game]));
+const replacements = new Map([[CROSS_ROAD_ID, AIR_HOCKEY_ID], [NUMBER_HUNT_ID, VOLLEYBALL_ID]]);
+export const GAMES = catalog.slice(0, STATION_COUNT).map(game => gameById.get(replacements.get(game.id) ?? game.id)!);
 export const categoryLabel: Record<Category, string> = { puzzle: "解謎", adventure: "冒險", math: "數學" };
 export const modeLabel: Record<Mode, string> = { solo: "單人", "co-op": "隊伍合作", "team-quiz": "隊伍答題" };
-// Keep retired names resolvable in results and audits.
-export const gameById = new Map(catalog.map(game => [game.id, game]));
 export const fixedId = (type: "TEAM" | "HOST" | "STATION", number: number) =>
   `${type}-${String(number).padStart(2, "0")}`;
 export const teamColors = ["#77c7ff", "#f8be6d", "#73e3b3", "#f189ac", "#a5acff", "#ff946e", "#5ae3ed", "#c3e879", "#d4acff", "#f4dc62"];

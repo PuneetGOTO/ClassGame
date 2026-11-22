@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomInt, randomUUID } from "node:crypto";
-import { COUNTDOWN_MS, GAME_MS, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
+import { COUNTDOWN_MS, GAME_MS, gameById, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
 import { practiceSeats, type PracticeRole, type PracticeSeat, type PracticeView } from "../../../packages/shared/practice";
 import { stationQrSchema, type ClientEvents } from "../../../packages/shared/protocol";
 import type { PluginFactory } from "../../../packages/game-sdk";
@@ -133,7 +133,8 @@ export class Practice {
       seq: role === "screen" ? 0 : state?.sequence[role] ?? 0,
       ...(role === "screen" ? {
         entries: this.entries(),
-        ...((state?.status === "running" || (state?.reason === "timeout" && this.gameId === VOLLEYBALL_ID)) &&
+        ...((state?.status === "running" ||
+          (state?.status === "finished" && state.reason !== "host-offline" && gameById.get(this.gameId)?.sharedArena)) &&
           { panels: [state.arena.panel(0), state.arena.panel(1)] })
       } : { remote: state?.status === "running" ? state.arena.remote(sideOf[role], role, state.pausedMs) : {} })
     };
