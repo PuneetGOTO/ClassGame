@@ -1,15 +1,17 @@
 import { gameById, type Controls } from "../../../packages/shared/catalog";
 import { neighbor, type Frame, type PluginFactory } from "../../../packages/game-sdk";
-import type { Action, MatchEndReason, MatchPanel, RemoteControls, SideCompletion } from "../../../packages/shared/protocol";
+import type { Action, AnswerStats, MatchEndReason, MatchPanel, RemoteControls, SideCompletion } from "../../../packages/shared/protocol";
 import type { Difficulty, MatchMode } from "../../../packages/shared/route";
 import { ANSWER_COOLDOWN_MS } from "../../../packages/shared/rules";
 import { RequestError } from "./store";
 
 interface SideSnapshot {
   side: number; engine: string; cursor: number | null; wonAt: number | null; answerTimes?: [string, number][];
+  answerStats?: [string, AnswerStats][];
 }
-interface Side extends Omit<SideSnapshot, "engine" | "answerTimes"> {
-  engine: ReturnType<PluginFactory>; completion?: SideCompletion; answerTimes: Map<string, number>;
+interface Side extends Omit<SideSnapshot, "engine" | "answerTimes" | "answerStats"> {
+  engine: ReturnType<PluginFactory>; completion?: SideCompletion;
+  answerTimes: Map<string, number>; answerStats: Map<string, AnswerStats>;
 }
 export interface ArenaResult { winner: number | null; reason: MatchEndReason }
 const sideKey = (side: number) => "side-" + side;
@@ -29,14 +31,15 @@ export class Arena {
       const engine = factory({ seed, tier, playerIds: [sideKey(side)] }, snapshot?.engine);
       const panel: Side = {
         side, engine, cursor: snapshot?.cursor ?? null, wonAt: snapshot?.wonAt ?? null,
-        answerTimes: new Map(snapshot?.answerTimes)
+        answerTimes: new Map(snapshot?.answerTimes), answerStats: new Map(snapshot?.answerStats)
       };
       if (panel.wonAt !== null) panel.completion = "cleared";
       else if (snapshot && engine.isComplete()) panel.completion = "exhausted";
       if (!saved && ["cell", "traffic"].includes(this.controls)) {
         const scene = engine.getState(sideKey(side));
         if (scene.kind === "tubes") panel.cursor = 0;
-        if (scene.kind === "grid") panel.cursor = scene.tiles.findIndex(tile => tile.action);
+        if (scene.kind === "grid") panel.cursor = scene.tiles.findIndex(tile =>
+          tile.action && (this.controls !== "traffic" || tile.kind.includes("tile-car-selected")));
       }
       this.sides.set(side, panel);
     }
@@ -58,7 +61,7 @@ export class Arena {
   }
 
   private moveCursor(side: Side, direction: Extract<Action, { kind: "cursor" }>["direction"]) {
-    if (side.cursor == null) return false;
+    if (side.cursor == null || side.cursor < 0) return false;
     const scene = side.engine.getState(sideKey(side.side));
     const backward = direction === "left" || direction === "up";
     let next = side.cursor;
@@ -106,7 +109,7 @@ export class Arena {
       if (now < (side.answerTimes.get(playerId) ?? 0)) {
         throw new RequestError("請等候 2 秒再作答", "answer-cooldown", 429);
       }
-    } else if (action.kind === "action" && action.action === "interact" && side.cursor !== null) {
+    } else if (action.kind === "action" && action.action === "interact" && side.cursor !== null && side.cursor >= 0) {
       input = { kind: "cell", index: side.cursor };
     }
     const before = this.controls === "traffic" && side.cursor != null ? side.engine.getState(key) : null;
@@ -120,7 +123,14 @@ export class Arena {
       }
     }
     if (accepted) {
-      if (input.kind === "answer") side.answerTimes.set(playerId, now + ANSWER_COOLDOWN_MS);
+      if (input.kind === "answer") {
+        side.answerTimes.set(playerId, now + ANSWER_COOLDOWN_MS);
+        const stats = side.answerStats.get(playerId) ?? { attempted: 0, correct: 0 };
+        const scene = side.engine.getState(key);
+        stats.attempted++;
+        if (scene.kind === "quiz" && scene.feedback === "correct") stats.correct++;
+        side.answerStats.set(playerId, stats);
+      }
       this.updateCompletion(side, now);
     }
     return { changed: accepted, played: accepted };
@@ -149,14 +159,25 @@ export class Arena {
     };
   }
 
-  remote(sideIndex: number, playerId: string): RemoteControls {
+  remote(sideIndex: number, playerId: string, clockOffset = 0): RemoteControls {
     const panel = this.panel(sideIndex);
     if (panel.completion) return { completion: panel.completion };
     const prompt = panel.scene?.kind === "quiz" ? panel.scene.prompt : undefined;
-    return prompt ? {
-      questionId: prompt.id, choices: prompt.options?.length,
-      answerAvailableAt: this.sides.get(sideIndex)?.answerTimes.get(playerId)
-    } : {};
+    if (!prompt) return {};
+    const availableAt = this.sides.get(sideIndex)?.answerTimes.get(playerId);
+    return { questionId: prompt.id, choices: prompt.options?.length,
+      answerAvailableAt: availableAt === undefined ? undefined : availableAt + clockOffset };
+  }
+
+  playerAnswers(sideIndex: number, playerId: string, shared: boolean) {
+    const side = this.sides.get(sideIndex);
+    const scene = side?.engine.getState(sideKey(sideIndex));
+    if (!side || scene?.kind !== "quiz") return {};
+    const sideAnswers = { attempted: scene.attempted, correct: scene.correct };
+    if (!shared) return sideAnswers;
+    const totalTracked = [...side.answerStats.values()].reduce((sum, stats) => sum + stats.attempted, 0);
+    if (totalTracked !== scene.attempted) return { sideAnswers };
+    return { sideAnswers, ...(side.answerStats.get(playerId) ?? { attempted: 0, correct: 0 }) };
   }
 
   result(eligible: ReadonlySet<number>, timeUp = false): ArenaResult | undefined {
@@ -184,7 +205,10 @@ export class Arena {
   }
 
   serialize() {
-    return JSON.stringify([...this.sides.values()].map(({ side, engine, cursor, wonAt, answerTimes }): SideSnapshot =>
-      ({ side, engine: engine.serialize(), cursor, wonAt, ...(answerTimes.size && { answerTimes: [...answerTimes] }) })));
+    return JSON.stringify([...this.sides.values()].map(({ side, engine, cursor, wonAt, answerTimes, answerStats }): SideSnapshot => ({
+      side, engine: engine.serialize(), cursor, wonAt,
+      ...(answerTimes.size && { answerTimes: [...answerTimes] }),
+      ...(answerStats.size && { answerStats: [...answerStats] })
+    })));
   }
 }

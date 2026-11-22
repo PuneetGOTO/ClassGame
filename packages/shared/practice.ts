@@ -16,7 +16,8 @@ export interface PracticeView {
     startedAt: number;
     deadline: number;
     winner: number | null;
-    reason: MatchEndReason | null;
+    reason: MatchEndReason | "host-offline" | null;
+    pausedAt?: number;
   } | null;
   panels?: MatchPanel[];
   entries?: { seat: PracticeSeat; url: string }[];

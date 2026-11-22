@@ -285,5 +285,35 @@ UPDATE game_sessions SET status='cancelled', reason='reset',
 WHERE status IN ('lobby','countdown','running');
 DELETE FROM station_queue;
 `
+}, {
+  version: 7,
+  sql: `
+ALTER TABLE match_search ADD COLUMN assisting INTEGER NOT NULL DEFAULT 0 CHECK (assisting IN (0,1));
+ALTER TABLE game_sessions ADD COLUMN paused_at INTEGER;
+ALTER TABLE game_sessions ADD COLUMN paused_ms INTEGER NOT NULL DEFAULT 0 CHECK (paused_ms >= 0);
+ALTER TABLE game_sessions ADD COLUMN clock_at INTEGER;
+ALTER TABLE game_sessions ADD COLUMN voided_at INTEGER;
+ALTER TABLE game_results ADD COLUMN assisting INTEGER NOT NULL DEFAULT 0 CHECK (assisting IN (0,1));
+ALTER TABLE game_results ADD COLUMN tied INTEGER NOT NULL DEFAULT 0 CHECK (tied IN (0,1));
+ALTER TABLE game_results ADD COLUMN voided_at INTEGER;
+
+DROP INDEX one_result_per_round;
+CREATE UNIQUE INDEX one_result_per_round ON game_results(competition_id,player_id,game_id,round_no)
+  WHERE participated=1 AND assisting=0 AND voided_at IS NULL;
+DROP INDEX one_result_per_route_step;
+CREATE UNIQUE INDEX one_result_per_route_step ON game_results(competition_id,player_id,route_step)
+  WHERE participated=1 AND route_step>0 AND voided_at IS NULL;
+UPDATE game_results SET tied=1 WHERE participated=1 AND session_id IN (
+  SELECT session_id FROM game_sessions WHERE match_tier>0 AND winner_side IS NULL
+);
+
+UPDATE game_results AS result SET metrics=json_remove(json_set(metrics,'$.sideAnswers',json_object(
+  'attempted',json_extract(metrics,'$.attempted'),'correct',json_extract(metrics,'$.correct')
+)), '$.attempted', '$.correct')
+WHERE json_valid(metrics) AND json_type(metrics,'$.attempted')='integer'
+  AND EXISTS (SELECT 1 FROM session_members member JOIN session_members teammate
+    ON teammate.session_id=member.session_id AND teammate.side=member.side AND teammate.player_id<>member.player_id
+    WHERE member.session_id=result.session_id AND member.player_id=result.player_id);
+`
 }];
 

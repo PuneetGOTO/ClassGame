@@ -23,6 +23,6 @@
 
 Caddy 提供 [遊戲網站](https://45.192.97.177/) 的 HTTPS 及憑證續期。Node 監聽主機內部連接埠。
 
-SQLite 第 6 版保存配對、場次與分屏狀態。升級時保留既有玩家及已結算的成績。
+SQLite 第 7 版保存陪打、暫停計時、和局及單場成績撤銷狀態。升級時保留既有玩家及已結算的成績，舊版共用答題紀錄標為本方合計。
 
 兩項 systemd 服務為 `campus-quest` 與 `campus-quest-proxy`，會隨主機啟動。現行發布在 `/opt/campus-quest/current`，正式 SQLite 在 `/var/lib/campus-quest/game.sqlite`。配置位於 `/etc/campus-quest`。

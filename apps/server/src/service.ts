@@ -76,6 +76,8 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
   const io = new Server<ClientEvents, ServerEvents, Record<string, never>, PeerData>(http, {
     maxHttpBufferSize: 16 * 1024,
     perMessageDeflate: false,
+    pingInterval: 5000,
+    pingTimeout: 5000,
     allowRequest: (request, callback) => {
       const origin = request.headers.origin;
       let allowed = !origin;
@@ -149,6 +151,7 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
     socket.on("team:join", (body, ack) => accept(z.object({ teamId: teamIdSchema }), body, ack,
       data => campus.changeTeam(campus.playerId(socket), data.teamId)));
     socket.on("match:find", (body, ack) => accept(z.null(), body, ack, () => campus.findMatch(campus.playerId(socket))));
+    socket.on("match:assist", (body, ack) => accept(z.null(), body, ack, () => campus.findMatch(campus.playerId(socket), true)));
     socket.on("match:cancel", (body, ack) => accept(z.null(), body, ack, () => campus.leaveStation(campus.playerId(socket))));
     socket.on("station:scan", (body, ack) => accept(z.object({ stationId: stationIdSchema, code: stationQrSchema }), body, ack,
       data => campus.scanStation(socket, data.stationId, data.code)));
@@ -269,8 +272,14 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
   });
   admin.get("/sessions/:id", (req, res) => {
     const id = validation(z.uuid(), req.params.id);
-    if (!store.get("SELECT 1 FROM game_sessions WHERE session_id=?", id)) throw new RequestError("找不到場次", "not-found", 404);
-    send(res, { results: store.resultsForSession(id), team: store.teamResult(id) });
+    const session = store.get<{ voided_at: number | null }>("SELECT voided_at FROM game_sessions WHERE session_id=?", id);
+    if (!session) throw new RequestError("找不到場次", "not-found", 404);
+    send(res, { results: store.resultsForSession(id), team: store.teamResult(id), voidedAt: session.voided_at });
+  });
+  admin.post("/sessions/:id/void", (req, res) => {
+    const id = validation(sessionIdSchema, req.params.id);
+    const { reason } = validation(z.object({ reason: z.string().trim().min(1).max(160) }), req.body);
+    send(res, campus.voidResult(id, reason));
   });
   admin.post("/competition/reset", (req, res) => {
     validation(z.object({ confirm: z.literal("RESET") }), req.body);
@@ -308,13 +317,13 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
       return;
     }
     const rows: (string|number)[][] = [
-      ["名次", "玩家ID", "玩家", "隊伍", "完成", "勝", "負", "單人分", "多人分", "總分",
+      ["名次", "玩家ID", "玩家", "隊伍", "完成", "勝", "和", "負", "單人分", "多人分", "總分",
         ...GAMES.map(game => game.name + " 結果"), ...GAMES.map(game => game.name + " 得分"),
         ...GAMES.map(game => game.name + " 雙倍挑戰")]
     ];
     for (const player of leaderboard.players) {
       const results = new Map(store.officialFor(player.id).map(result => [result.gameId, result]));
-      rows.push([player.rank, player.id, player.name, player.teamName, player.completed, player.wins, player.losses,
+      rows.push([player.rank, player.id, player.name, player.teamName, player.completed, player.wins, player.ties, player.losses,
         player.soloScore, player.multiScore, player.totalScore,
         ...GAMES.map(game => {
           const result = results.get(game.id);

@@ -27,6 +27,7 @@ const auditNames: Record<string,string> = {
   "team.change": "變更隊伍", "team.auto": "自動分隊", "map.update": "更新地圖",
   "station.configure": "更新站點", "station.start": "開始場次", "station.stop": "停止場次",
   "station.reset": "作廢場次", "station.retry": "開放重玩", "station.clear-queue": "清空隊列",
+  "session.void": "撤銷場次成績",
   "round.open": "新增正式輪次", "competition.reset": "重設比賽", "system.error": "系統錯誤", "rules.update": "更新雙倍挑戰"
 };
 type AdminPlayer = AdminState["players"][number];
@@ -330,7 +331,7 @@ function DoubleRules({ chance, adminKey, run, busy }: { chance: number; adminKey
   const [value, setValue] = useState(String(chance));
   return <section className="panel admin-panel">
     <h2><Lightning size={22}/> 雙倍挑戰</h2>
-    <p className="muted">新場次開始時抽籤。觸發後只選一名在線參賽者，勝利加兩倍，失敗扣兩倍。設為 0% 可關閉。</p>
+    <p className="muted">新場次開始時抽籤。抽中的場次會在比賽中或提前結算時公布一位在線玩家。勝利加兩倍，失敗扣兩倍。設為 0% 可關閉。</p>
     <form className="form-stack" onSubmit={event => {
       event.preventDefault();
       void run(async () => {
@@ -463,6 +464,8 @@ function AdminSessions({ admin, adminKey, run, busy }: { admin: AdminState; admi
   const [history,setHistory] = useState<Session[]>([]);
   const [next,setNext] = useState<number | null>();
   const [archived,setArchived] = useState(false);
+  const [voiding, setVoiding] = useState(false);
+  const [voidReason, setVoidReason] = useState("");
   const rows = archived ? history : admin.sessions;
   async function loadHistory(cursor?: number) {
     await run(async () => {
@@ -481,16 +484,41 @@ function AdminSessions({ admin, adminKey, run, busy }: { admin: AdminState; admi
       <tbody>{rows.map(session => <tr key={session.id}>
         <td>{formatTime(session.endedAt)}</td><td>{session.competitionId}</td><th scope="row">{gameById.get(session.gameId)?.name}</th>
         <td>{numberOf(session.stationId)}</td><td>{session.teamId ? <TeamTag id={session.teamId}/> : "—"}</td><td>{session.step ?? "—"}</td>
-        <td>{session.reason ? reasons[session.reason] : "已結算"}{session.status === "cancelled" ? " · 作廢" : ""}</td>
+        <td>{session.voidedAt != null ? "成績已撤銷" : session.reason ? reasons[session.reason] : "已結算"}{session.status === "cancelled" ? " · 作廢" : ""}</td>
         <td><button className="button secondary compact" type="button" disabled={busy || session.status !== "finished"}
-          onClick={() => void run(async () => setSelected({ session,
-            ...await adminRequest<{ results: Result[]; team: TeamResult | null }>(adminKey,"/sessions/" + session.id) }))}>查看結算</button></td>
+          onClick={() => void run(async () => {
+            const details = await adminRequest<{ results: Result[]; team: TeamResult | null; voidedAt: number | null }>(adminKey,"/sessions/" + session.id);
+            setSelected({ session: { ...session, voidedAt: details.voidedAt }, results: details.results, team: details.team });
+            setVoiding(false);
+            setVoidReason("");
+          })}>查看結算</button></td>
       </tr>)}</tbody>
     </table></div>}
     {archived && next && <button className="button secondary" type="button" disabled={busy} onClick={() => void loadHistory(next)}>載入較早場次</button>}
     {selected && <Dialog title={gameById.get(selected.session.gameId)?.name + " · 結算"} onClose={() => setSelected(undefined)}>
+      {selected.session.voidedAt != null && <p className="notice">成績已撤銷 · {formatTime(selected.session.voidedAt)}</p>}
       {selected.team && <p>原始分數合計 {selected.team.rawTotal} · 隊伍平均 {fmtScore(selected.team.average)} 分</p>}
       <ResultTable results={selected.results}/>
+      {selected.session.voidedAt == null && (!voiding
+        ? <button className="button danger" type="button" disabled={busy} onClick={() => setVoiding(true)}>撤銷成績</button>
+        : <form className="form-stack" onSubmit={event => {
+          event.preventDefault();
+          const reason = voidReason.trim();
+          if (!reason) return;
+          void run(async () => {
+            const { id } = selected.session;
+            const { voidedAt } = await adminRequest<{ voidedAt: number }>(adminKey, "/sessions/" + id + "/void", "POST", { reason });
+            setHistory(previous => previous.map(session => session.id === id ? { ...session, voidedAt } : session));
+            setSelected(undefined);
+          }, "已撤銷場次成績，排行榜已更新");
+        }}>
+          <p className="muted">本場將從積分及闖關進度扣除，原始紀錄與撤銷原因會保留。</p>
+          <label>撤銷原因<input required maxLength={160} value={voidReason} onChange={event => setVoidReason(event.target.value)}/></label>
+          <div className="admin-actions">
+            <button className="button secondary" type="button" disabled={busy} onClick={() => setVoiding(false)}>返回結算</button>
+            <button className="button danger" type="submit" disabled={busy || !voidReason.trim()}>確認撤銷成績</button>
+          </div>
+        </form>)}
     </Dialog>}
   </section>;
 }
@@ -498,11 +526,13 @@ function ResultTable({ results, includeGames }: { results: Result[]; includeGame
   return results.length ? <div className="table-scroll"><table>
     <thead><tr><th>{includeGames ? "遊戲" : "參賽者"}</th><th>結果</th><th>原始分</th><th>基礎分</th><th>計入分</th><th>耗時</th><th>任務成果</th></tr></thead>
     <tbody>{results.map(item => <tr key={item.sessionId + item.playerId}><th scope="row">{includeGames ? gameById.get(item.gameId)?.name : item.playerName}</th>
-      <td>{item.tied ? "和" : item.outcome === "win" ? "勝" : item.outcome === "lose" ? "負" : "未參賽"}</td><td>{item.rawPoints}</td>
+      <td>{item.assisting && "陪打 · "}{item.tied ? "和" : item.outcome === "win" ? "勝" : item.outcome === "lose" ? "負" : "未參賽"}</td><td>{item.rawPoints}</td>
       <td>{fmtScore(item.baseAwarded)}</td><td className={item.awarded < 0 ? "negative-points" : "em-score"}>{fmtChange(item.awarded)}
         {item.doublePoints && " · 雙倍"}</td><td>{item.participated ? (item.duration / 1000).toFixed(2) + " 秒" : "—"}</td>
-      <td>{item.metrics.correct !== undefined ? "答對 " + item.metrics.correct + " / 已答 " + item.metrics.attempted
-        : item.metrics.progress ? item.metrics.progress.label + " " + item.metrics.progress.value + "/" + item.metrics.progress.target : "—"}</td></tr>)}</tbody>
+      <td>{item.metrics.correct !== undefined || item.metrics.sideAnswers ? <>
+        {item.metrics.correct !== undefined && <div>個人答對 {item.metrics.correct} / 已答 {item.metrics.attempted}</div>}
+        {item.metrics.sideAnswers && <div>本方答對 {item.metrics.sideAnswers.correct} / 已答 {item.metrics.sideAnswers.attempted}</div>}
+      </> : item.metrics.progress ? item.metrics.progress.label + " " + item.metrics.progress.value + "/" + item.metrics.progress.target : "—"}</td></tr>)}</tbody>
   </table></div> : <Empty title="這裡還沒有正式成績"/>;
 }
 

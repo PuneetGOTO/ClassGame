@@ -80,7 +80,9 @@ export default plugin({
       return { kind, tint: index, action: true, label: direction, title: index === 0 ? "金色目標車" : "車輛 " + (index + 1) };
     }) };
   },
-  getProgress: state => ({ value: state.escaped ? 1 : 0, target: 1, label: "目標車離場" }),
+  getProgress: state => ({
+    value: state.escaped ? size - 1 : state.cars[0].x, target: size - 1, label: "目標車前進格數"
+  }),
   checkWin: state => state.escaped
 });
 

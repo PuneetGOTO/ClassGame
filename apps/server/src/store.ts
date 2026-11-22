@@ -26,6 +26,10 @@ export interface SessionRow {
   route_step?: number;
   match_tier?: number;
   winner_side?: number | null;
+  clock_at?: number | null;
+  paused_at?: number | null;
+  paused_ms?: number;
+  voided_at?: number | null;
 }
 export interface MemberRow {
   player_id: string; team_id: string; ready: number; participated: number; forfeited: number;
@@ -35,15 +39,17 @@ export interface MemberRow {
   side: number | null;
   route_step: number;
 }
-export interface MatchTicket { player_id: string; queued_at: number }
+export interface MatchTicket { player_id: string; queued_at: number; assisting: number }
 interface SQLRank extends PlayerRank { soloUnits: number; multiUnits: number }
 interface TeamRow { team_id: string; team_name: string; member_count: number }
-type ResultRow = Omit<Result, "participated" | "tied" | "metrics"> & { participated: number; tied: number; metrics: string };
+type ResultRow = Omit<Result, "participated" | "assisting" | "tied" | "metrics"> & {
+  participated: number; assisting: number; tied: number; metrics: string;
+};
 
 const resultFields = `
   r.player_id AS playerId, p.player_name AS playerName, r.session_id AS sessionId, r.game_id AS gameId,
   r.team_id AS teamId, r.round_no AS round, NULLIF(r.route_step,0) AS step, r.participated, r.win_or_lose AS outcome, r.raw_points AS rawPoints,
-  (r.participated=1 AND gs.match_tier>0 AND gs.winner_side IS NULL) AS tied,
+  r.tied, r.assisting,
   r.awarded_units * r.score_weight / 5.0 AS baseAwarded, r.awarded_points AS awarded, r.adjustment_units <> 0 AS doublePoints,
   r.duration, r.created_at AS date, r.metrics
 `;
@@ -52,7 +58,8 @@ const teamResultFields = `
   total_raw_points AS rawTotal, team_average_points AS average, created_at AS date
 `;
 const asResult = (row: ResultRow): Result => ({
-  ...row, participated: Boolean(row.participated), tied: Boolean(row.tied), doublePoints: Boolean(row.doublePoints), metrics: JSON.parse(row.metrics)
+  ...row, participated: Boolean(row.participated), assisting: Boolean(row.assisting), tied: Boolean(row.tied),
+  doublePoints: Boolean(row.doublePoints), metrics: JSON.parse(row.metrics)
 });
 const hash = (token: string) => createHash("sha256").update(token).digest("hex");
 const nameKey = (name: string) => name.normalize("NFKC").toLocaleLowerCase("zh-Hant").trim();
@@ -226,12 +233,13 @@ export class Store {
         h.host_id AS hostId,h.assigned_game_id AS gameId,h.connection_status AS online,
         (SELECT COUNT(*) FROM game_sessions gs JOIN session_members m USING(session_id)
           WHERE gs.station_id=s.station_id AND gs.competition_id=? AND gs.status='lobby' AND m.checked_in=0) AS queued,
-        (SELECT COUNT(*) FROM game_sessions gs WHERE gs.station_id=s.station_id AND gs.competition_id=? AND gs.status='finished') AS completed
+         (SELECT COUNT(*) FROM game_sessions gs WHERE gs.station_id=s.station_id AND gs.competition_id=?
+           AND gs.status='finished' AND gs.voided_at IS NULL) AS completed
       FROM campus_stations s JOIN hosts h ON s.assigned_host_id=h.host_id ORDER BY s.station_id
     `, this.competitionId, this.competitionId);
   }
   playedGames(playerId: string) {
-    return this.all<{ gameId: string; floor: Floor }>(`SELECT r.game_id AS gameId,s.floor
+    return this.all<{ gameId: string; floor: Floor; step: number | null }>(`SELECT r.game_id AS gameId,s.floor,NULLIF(r.route_step,0) AS step
       FROM official_results o JOIN game_results r USING(result_id)
       JOIN game_sessions gs USING(session_id) JOIN campus_stations s USING(station_id)
       WHERE o.competition_id=? AND o.player_id=? ORDER BY r.result_id DESC`, this.competitionId, playerId);
@@ -255,7 +263,8 @@ export class Store {
   }
   recentFor(playerId: string) {
     const result = this.get<ResultRow>(`SELECT ${resultFields} FROM game_results r JOIN game_sessions gs USING(session_id) JOIN players p ON p.player_id=r.player_id
-      WHERE r.competition_id=? AND r.player_id=? AND r.participated=1 ORDER BY r.result_id DESC LIMIT 1`, this.competitionId, playerId);
+      WHERE r.competition_id=? AND r.player_id=? AND r.participated=1 AND r.voided_at IS NULL
+      ORDER BY r.result_id DESC LIMIT 1`, this.competitionId, playerId);
     return result ? asResult(result) : null;
   }
   resultsForSession(sessionId: string) {
@@ -268,7 +277,7 @@ export class Store {
   sessionHistory(before: number, limit: number) {
     const records = this.all<AdminState["sessions"][number] & { cursor: number }>(`SELECT rowid AS cursor,
       session_id AS id,station_id AS stationId,game_id AS gameId,competition_id AS competitionId,
-      team_id AS teamId,round_no AS round,NULLIF(route_step,0) AS step,status,started_at AS startedAt,ended_at AS endedAt,reason
+      team_id AS teamId,round_no AS round,NULLIF(route_step,0) AS step,status,started_at AS startedAt,ended_at AS endedAt,reason,voided_at AS voidedAt
       FROM game_sessions WHERE rowid<? AND status IN ('finished','cancelled') ORDER BY rowid DESC LIMIT ?`, before, limit + 1);
     const next = records.length > limit ? records[limit - 1].cursor : null;
     return { sessions: records.slice(0, limit).map(({ cursor: _, ...record }) => record), next };
@@ -279,7 +288,8 @@ export class Store {
     const players = this.all<SQLRank>(`SELECT p.player_id AS id,p.player_name AS name,p.team_id AS teamId,
       t.team_name AS teamName,p.connected,p.total_score AS totalScore,
       COUNT(r.result_id) AS completed,COALESCE(SUM(r.win_or_lose='win'),0) AS wins,
-      COALESCE(SUM(r.win_or_lose='lose'),0) AS losses,COALESCE(SUM(r.duration),0) AS duration,
+      COALESCE(SUM(r.tied),0) AS ties,COALESCE(SUM(r.win_or_lose='lose' AND r.tied=0),0) AS losses,
+      COALESCE(SUM(r.duration),0) AS duration,
       SUM(CASE WHEN gs.team_id IS NULL THEN COALESCE((r.awarded_units+r.adjustment_units)*r.score_weight,0) ELSE 0 END) AS soloUnits,
       SUM(CASE WHEN gs.team_id IS NOT NULL THEN (r.awarded_units+r.adjustment_units)*r.score_weight ELSE 0 END) AS multiUnits
       FROM players p JOIN teams t USING(team_id)
@@ -306,6 +316,40 @@ export class Store {
 
   audit(action: string, detail: string, now: number) {
     this.run("INSERT INTO audit_log(action,detail,created_at) VALUES (?,?,?)", action, detail, now);
+  }
+  refreshPlayerScore(playerId: string, competitionId: number) {
+    if (competitionId !== this.competitionId) return;
+    this.run(`UPDATE players SET score_units=(SELECT
+      COALESCE(SUM((r.awarded_units+r.adjustment_units)*r.score_weight),0)
+      FROM official_results o JOIN game_results r USING(result_id) WHERE o.player_id=? AND o.competition_id=?)
+      WHERE player_id=?`, playerId, competitionId, playerId);
+  }
+  voidSession(sessionId: string, reason: string, now: number) {
+    return this.transaction(() => {
+      const session = this.get<SessionRow>("SELECT * FROM game_sessions WHERE session_id=?", sessionId);
+      if (!session) throw new RequestError("找不到場次", "not-found", 404);
+      if (session.status !== "finished") throw new RequestError("只有已結算的場次可撤銷成績", "not-settled", 409);
+      if (session.voided_at != null) return { voidedAt: session.voided_at, players: [] };
+
+      const { competition_id: competitionId, game_id: gameId } = session;
+      const counted = this.all<{ player_id: string }>(`SELECT o.player_id FROM official_results o
+        JOIN game_results r USING(result_id) WHERE r.session_id=?`, sessionId);
+      const players = this.all<{ player_id: string }>(
+        "SELECT player_id FROM game_results WHERE session_id=? AND participated=1", sessionId
+      ).map(row => row.player_id);
+      this.run("UPDATE game_sessions SET voided_at=? WHERE session_id=?", now, sessionId);
+      this.run("UPDATE game_results SET voided_at=? WHERE session_id=?", now, sessionId);
+      this.run("DELETE FROM official_results WHERE result_id IN (SELECT result_id FROM game_results WHERE session_id=?)", sessionId);
+      for (const { player_id: playerId } of counted) {
+        this.run(`INSERT INTO official_results(competition_id,player_id,game_id,result_id)
+          SELECT competition_id,player_id,game_id,result_id FROM game_results
+          WHERE competition_id=? AND player_id=? AND game_id=? AND participated=1 AND assisting=0 AND voided_at IS NULL
+          ORDER BY result_id DESC LIMIT 1`, competitionId, playerId, gameId);
+        this.refreshPlayerScore(playerId, competitionId);
+      }
+      this.audit("session.void", sessionId + " · " + reason, now);
+      return { voidedAt: now, players: competitionId === this.competitionId ? players : [] };
+    });
   }
   resetCompetition(now: number, action = "competition.reset") {
     this.competitionId = this.transaction(() => {

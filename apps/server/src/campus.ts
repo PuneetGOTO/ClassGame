@@ -2,8 +2,10 @@ import { randomInt, randomUUID } from "node:crypto";
 import type { Server, Socket } from "socket.io";
 import { COUNTDOWN_MS, GAME_MS, GAMES } from "../../../packages/shared/catalog";
 import { floorLabel, type Floor } from "../../../packages/shared/floors";
-import { DOUBLE_END_MS, DOUBLE_START_MS, MATCH_ARRIVAL_MS, MIN_MATCH_PLAYERS, STATION_SCAN_GRANT_MS } from "../../../packages/shared/rules";
-import { ROUTE_LENGTH, routeTier, type Difficulty } from "../../../packages/shared/route";
+import {
+  DOUBLE_END_MS, DOUBLE_START_MS, MATCH_ARRIVAL_MS, MATCH_WAIT_MS, MIN_MATCH_PLAYERS, SCREEN_RECONNECT_MS, STATION_SCAN_GRANT_MS
+} from "../../../packages/shared/rules";
+import { completedRouteSteps, ROUTE_LENGTH, routeTier, type Difficulty } from "../../../packages/shared/route";
 import type { PracticeRole } from "../../../packages/shared/practice";
 import type {
   AdminState, CampusState, ClientEvents, EndReason, HostView, PlayerView, RoomView, ServerEvents, StationEntry, StationView
@@ -13,7 +15,7 @@ import { settle, type Outcome } from "./scoring";
 import { RequestError, Store, type MemberRow, type MatchTicket, type SessionRow } from "./store";
 import { checkStationQr, qrExpiry, stationQr } from "./station-qr";
 import { Arena, matchMode } from "./arena";
-import { selectMatch, type MatchChoice } from "./matchmaking";
+import { selectMatch, type Candidate, type MatchChoice } from "./matchmaking";
 
 export type PeerData = { playerId?: string; hostId?: string; entryOrigin?: string; practiceRole?: PracticeRole;
   stationScan?: { stationId: string; hostConnection: string; expiresAt: number } };
@@ -21,6 +23,7 @@ export type CampusSocket = Socket<ClientEvents, ServerEvents, Record<string, nev
 export type CampusIO = Server<ClientEvents, ServerEvents, Record<string, never>, PeerData>;
 interface Room { row: SessionRow; members: Map<string, MemberRow>; arena?: Arena }
 const resultDisplayMs = 5000;
+const clockCheckpointMs = 1000;
 
 export class Campus {
   private readonly rooms = new Map<string, Room>();
@@ -44,7 +47,7 @@ export class Campus {
   ) {
     this.leader = store.leaderboard();
     const rows = this.store.all<SessionRow>(`SELECT * FROM game_sessions WHERE competition_id=? AND match_tier>0 AND
-      (status IN ('lobby','countdown','running') OR (status='finished' AND ended_at>=?)) ORDER BY ended_at, created_at`,
+      (status IN ('lobby','countdown','running') OR (status='finished' AND voided_at IS NULL AND ended_at>=?)) ORDER BY ended_at, created_at`,
       this.store.competitionId, this.now() - resultDisplayMs);
     for (const row of rows) {
       const members = this.store.all<MemberRow>("SELECT * FROM session_members WHERE session_id=? ORDER BY rowid", row.session_id);
@@ -53,6 +56,7 @@ export class Campus {
         if (row.status === "finished") this.lastAtStation.set(row.station_id, room);
         else this.rooms.set(row.station_id, room);
         if (row.engine_state) this.restoreEngine(room);
+        this.pauseRoom(room, row.clock_at ?? this.now());
       } catch (error) {
         this.recordError(error, row.session_id);
         if (row.status !== "finished") this.cancel(room, "error");
@@ -91,13 +95,16 @@ export class Campus {
     const { row, arena, members } = room;
     const playing = row.status === "running" || row.status === "finished";
     const member = viewer ? members.get(viewer) : undefined;
+    const clockOffset = row.paused_ms ?? 0;
     const sides = [...new Set([...members.values()].flatMap(item => item.side === null ? [] : [item.side]))].sort();
     const doubleMember = row.double_player_id ? members.get(row.double_player_id) : undefined;
     return {
       id: row.session_id, gameId: row.game_id, hostId: row.host_id, stationId: row.station_id, teamId: row.team_id,
-      startedAt: row.started_at, deadline: row.deadline, round: row.round_no, status: row.status, reason: row.reason, now: this.now(),
+      startedAt: row.started_at === null ? null : row.started_at + clockOffset,
+      deadline: row.deadline, round: row.round_no, status: row.status, reason: row.reason, now: this.now(),
+      ...(row.paused_at != null && { pausedAt: row.paused_at }),
       seq: member?.last_seq ?? 0,
-      course: member ? { step: member.route_step, tier: routeTier(member.route_step) } : null,
+      course: member?.route_step ? { step: member.route_step, tier: routeTier(member.route_step) } : null,
       doubleChallenge: doubleMember && row.double_started_at != null ? {
         playerId: doubleMember.player_id, playerName: this.store.player(doubleMember.player_id)!.player_name,
         startedAt: row.double_started_at, tier: routeTier(doubleMember.route_step)
@@ -108,6 +115,7 @@ export class Campus {
           id: player.player_id, name: player.player_name, connected: Boolean(player.connected),
           ready: Boolean(item.ready), participated: Boolean(item.participated), forfeited: Boolean(item.forfeited),
           checkedIn: Boolean(item.checked_in), position: index + 1, side: item.side, tint: item.side ?? index,
+          ...(item.route_step === 0 && { assisting: true }),
           progress: playing && item.side !== null ? arena?.panel(item.side, false).progress ?? undefined : undefined
         };
       }),
@@ -115,7 +123,7 @@ export class Campus {
       match: {
         mode: matchMode(members.size), arrivalDeadline: row.created_at + MATCH_ARRIVAL_MS, winner: row.winner_side ?? null,
         ...(viewer
-          ? { remote: playing && member?.side != null ? arena?.remote(member.side, viewer) ?? {} : {} }
+          ? { remote: playing && member?.side != null ? arena?.remote(member.side, viewer, clockOffset) ?? {} : {} }
           : { panels: playing ? sides.map(side => arena!.panel(side)) : [] })
       }
     };
@@ -127,12 +135,15 @@ export class Campus {
     const seat = room?.members.get(id);
     const lastResult = this.store.recentFor(id);
     const results = this.store.officialFor(id);
-    const searching = Boolean(this.store.get("SELECT 1 FROM match_search WHERE player_id=?", id));
+    const ticket = this.store.get<MatchTicket>("SELECT * FROM match_search WHERE player_id=?", id);
+    const assisting = seat ? seat.route_step === 0 : !!ticket?.assisting;
     return {
       player: this.store.publicPlayer(row), teamRank: this.leader.teams.find(t => t.id === row.team_id)?.rank ?? 0,
       results, queue: null,
-      route: { completed: Math.min(results.length, ROUTE_LENGTH), searching, next: room && seat ? {
-        step: seat.route_step, gameId: room.row.game_id, stationId: room.row.station_id, tier: routeTier(seat.route_step)
+      route: { completed: Math.min(results.length, ROUTE_LENGTH), searching: !!ticket, ...(assisting && { assisting }),
+        next: room && seat ? {
+        step: seat.route_step || null, gameId: room.row.game_id, stationId: room.row.station_id,
+        tier: assisting ? room.row.match_tier as Difficulty : routeTier(seat.route_step)
       } : null },
       room: room ? this.roomView(room, id) : null,
       lastResult, lastTeamResult: lastResult ? this.store.teamResult(lastResult.sessionId) : null, now: this.now()
@@ -281,6 +292,7 @@ export class Campus {
     const station = this.hostView(hostId, origin).station;
     const room = this.rooms.get(station.id);
     if (room?.row.status === "lobby") this.maybeStart(room);
+    else if (room) this.advance(room, this.now());
     this.mark();
     return this.hostView(hostId, origin);
   }
@@ -288,8 +300,12 @@ export class Campus {
     if (socket.data.playerId) this.detachPlayer(socket, socket.data.playerId);
     const hostId = socket.data.hostId;
     if (hostId && this.hosts.get(hostId) === socket) {
+      const room = [...this.rooms.values()].find(item => item.row.host_id === hostId);
+      const now = this.now();
+      if (room && room.row.deadline !== null && now >= room.row.deadline && room.row.paused_at == null) this.advance(room, now);
       this.hosts.delete(hostId);
       this.store.run("UPDATE hosts SET connection_status=0 WHERE host_id=?", hostId);
+      if (room && this.pauseRoom(room, now)) this.pushRoom(room);
     }
     this.mark();
   }
@@ -309,10 +325,12 @@ export class Campus {
     return room;
   }
 
-  findMatch(id: string) {
+  findMatch(id: string, assisting = false) {
     if (this.memberRoom(id)) return this.playerView(id);
-    if (this.store.playedGames(id).length >= ROUTE_LENGTH) throw new RequestError("你已完成全部 10 關", "course-complete", 409);
-    this.store.run("INSERT OR IGNORE INTO match_search(player_id,queued_at) VALUES (?,?)", id, this.now());
+    if (!assisting && this.store.playedGames(id).length >= ROUTE_LENGTH) throw new RequestError("你已完成全部 10 關", "course-complete", 409);
+    this.store.run(`INSERT INTO match_search(player_id,queued_at,assisting) VALUES (?,?,?)
+      ON CONFLICT(player_id) DO UPDATE SET queued_at=excluded.queued_at,assisting=excluded.assisting
+      WHERE match_search.assisting<>excluded.assisting`, id, this.now(), Number(assisting));
     this.mark();
     return this.playerView(id);
   }
@@ -354,6 +372,11 @@ export class Campus {
     return this.playerView(id);
   }
 
+  private requeue(member: MemberRow, now: number) {
+    this.store.run("INSERT OR IGNORE INTO match_search(player_id,queued_at,assisting) VALUES (?,?,?)",
+      member.player_id, now, Number(member.route_step === 0));
+  }
+
   private matchPlayers(now: number) {
     if (now < this.nextMatchAt) return;
     this.nextMatchAt = now + 500;
@@ -364,21 +387,41 @@ export class Campus {
       this.store.get<{ enabled: number }>("SELECT enabled FROM games WHERE game_id=?", station.gameId)?.enabled
     );
     if (!rooms.length) return;
+    const volunteers: Candidate[] = [];
     let waiting = tickets.flatMap(ticket => {
       if (!this.players.has(ticket.player_id) || this.memberRoom(ticket.player_id)) return [];
       const played = this.store.playedGames(ticket.player_id);
+      const common = { id: ticket.player_id, queuedAt: ticket.queued_at, lastFloor: played[0]?.floor ?? null };
+      if (ticket.assisting) {
+        volunteers.push({ ...common, step: 0, games: new Set() });
+        return [];
+      }
       if (played.length >= ROUTE_LENGTH) return [];
+      const steps = completedRouteSteps(played.map(game => game.step));
+      let step = 1;
+      while (steps.has(step)) step++;
       return [{
-        id: ticket.player_id, step: played.length + 1, queuedAt: ticket.queued_at,
-        games: new Set(played.map(game => game.gameId)), lastFloor: played[0]?.floor ?? null
+        ...common, step, games: new Set(played.map(game => game.gameId))
       }];
     });
-    while (rooms.length && waiting.length >= MIN_MATCH_PLAYERS) {
-      const match = selectMatch(waiting, rooms, now);
+    while (rooms.length && waiting.length) {
+      const match = selectMatch(waiting, rooms, now) ?? this.assistedMatch(waiting, volunteers, rooms, now);
       if (!match) break;
       this.reserveMatch(match, now);
       rooms = rooms.filter(station => station.id !== match.stationId);
       waiting = waiting.filter(player => !match.players.includes(player));
+      const volunteer = match.players.find(player => player.step === 0);
+      if (volunteer) volunteers.splice(volunteers.indexOf(volunteer), 1);
+    }
+  }
+
+  private assistedMatch(waiting: Candidate[], volunteers: Candidate[], rooms: Parameters<typeof selectMatch>[1], now: number) {
+    const volunteer = volunteers[0];
+    if (!volunteer) return;
+    for (const player of waiting) {
+      if (now - player.queuedAt < MATCH_WAIT_MS) continue;
+      const match = selectMatch([player, volunteer], rooms, now);
+      if (match) return match;
     }
   }
 
@@ -448,16 +491,16 @@ export class Campus {
       for (const member of absent) {
         this.store.run("DELETE FROM session_members WHERE session_id=? AND player_id=?", row.session_id, member.player_id);
         if (member.checked_in && this.players.has(member.player_id)) {
-          this.store.run("INSERT OR IGNORE INTO match_search(player_id,queued_at) VALUES (?,?)", member.player_id, this.now());
+          this.requeue(member, this.now());
         }
       }
-      this.store.run("UPDATE game_sessions SET status='countdown',started_at=?,deadline=?,roster=?,engine_state=?,double_due_at=? WHERE session_id=?",
-        startedAt, deadline, JSON.stringify(participants), engineState, due, row.session_id);
+      this.store.run(`UPDATE game_sessions SET status='countdown',started_at=?,deadline=?,roster=?,engine_state=?,double_due_at=?,clock_at=?
+        WHERE session_id=?`, startedAt, deadline, JSON.stringify(participants), engineState, due, this.now(), row.session_id);
     });
     for (const [index, member] of ready.entries()) Object.assign(member, { participated: 1, side: sides[index] });
     for (const member of absent) room.members.delete(member.player_id);
     Object.assign(row, { status: "countdown", started_at: startedAt, deadline, roster: JSON.stringify(participants),
-      engine_state: engineState, double_due_at: due });
+      engine_state: engineState, double_due_at: due, clock_at: this.now() });
     room.arena = arena;
     this.pushRoom(room, "game:start");
     this.mark();
@@ -472,14 +515,15 @@ export class Campus {
     room.arena = new Arena(factory, row.game_id, row.seed, row.match_tier as Difficulty, sides, row.engine_state);
   }
 
-  private checkpoint(room: Room, sequence?: { member: MemberRow; seq: number; played: boolean }) {
+  private checkpoint(room: Room, now: number, sequence?: { member: MemberRow; seq: number; played: boolean }) {
     const engineState = room.arena!.serialize();
     this.store.transaction(() => {
-      this.store.run("UPDATE game_sessions SET engine_state=? WHERE session_id=?", engineState, room.row.session_id);
+      this.store.run("UPDATE game_sessions SET engine_state=?,clock_at=? WHERE session_id=?", engineState, now, room.row.session_id);
       if (sequence) this.store.run("UPDATE session_members SET last_seq=?, played=MAX(played,?) WHERE session_id=? AND player_id=?",
         sequence.seq, Number(sequence.played), room.row.session_id, sequence.member.player_id);
     });
     room.row.engine_state = engineState;
+    room.row.clock_at = now;
     if (sequence) Object.assign(sequence.member, { last_seq: sequence.seq, played: sequence.member.played || Number(sequence.played) });
   }
 
@@ -498,6 +542,25 @@ export class Campus {
     if (!result) return false;
     this.finish(room, result.reason, now, result.winner);
     return true;
+  }
+  private pauseRoom(room: Room, now: number) {
+    const { row } = room;
+    if ((row.status !== "countdown" && row.status !== "running") || row.paused_at != null) return false;
+    this.store.run("UPDATE game_sessions SET paused_at=? WHERE session_id=?", now, row.session_id);
+    row.paused_at = now;
+    this.mark();
+    return true;
+  }
+
+  private resumeRoom(room: Room, now: number, pausedAt: number) {
+    const { row } = room;
+    const pause = Math.max(0, now - pausedAt);
+    const deadline = row.deadline! + pause;
+    const pausedMs = (row.paused_ms ?? 0) + pause;
+    this.store.run("UPDATE game_sessions SET paused_at=NULL,paused_ms=?,deadline=?,clock_at=? WHERE session_id=?",
+      pausedMs, deadline, now, row.session_id);
+    Object.assign(row, { paused_at: null, paused_ms: pausedMs, clock_at: now, deadline });
+    this.mark();
   }
   private throttle(id: string) {
     const now = this.now();
@@ -519,9 +582,10 @@ export class Campus {
       throw new RequestError("目前不能操作此場次", "not-running", 409);
     }
     if (!this.hosts.has(room.row.host_id)) throw new RequestError("正在等候房間大螢幕重新連線", "host-offline", 409);
-    const change = room.arena!.input(member.side, id, action, now - room.row.started_at!, now);
+    const gameNow = now - (room.row.paused_ms ?? 0);
+    const change = room.arena!.input(member.side, id, action, gameNow - room.row.started_at!, gameNow);
     if (change.changed) {
-      this.checkpoint(room, { member, seq, played: change.played });
+      this.checkpoint(room, now, { member, seq, played: change.played });
       if (!this.checkResult(room, now)) this.pushRoom(room);
     } else {
       this.store.run("UPDATE session_members SET last_seq=? WHERE session_id=? AND player_id=?", seq, sessionId, id);
@@ -532,68 +596,99 @@ export class Campus {
 
   private advance(room: Room, now: number) {
     const { row, arena } = room;
-    if (row.status === "countdown" && now >= row.started_at!) {
+    if (row.status !== "countdown" && row.status !== "running") return;
+    if (!this.hosts.has(row.host_id)) {
+      if (this.pauseRoom(room, now)) this.pushRoom(room);
+    }
+    let changed = false;
+    if (row.paused_at != null) {
+      if (now - row.paused_at >= SCREEN_RECONNECT_MS) {
+        this.cancel(room, "host-offline", true);
+        return;
+      }
+      if (!this.hosts.has(row.host_id)) return;
+      this.resumeRoom(room, now, row.paused_at);
+      changed = true;
+    }
+    const clockOffset = row.paused_ms ?? 0;
+    if (row.status === "countdown" && now >= row.started_at! + clockOffset) {
       arena!.start();
       const state = arena!.serialize();
-      this.store.run("UPDATE game_sessions SET status='running',engine_state=? WHERE session_id=?", state, row.session_id);
-      Object.assign(row, { status: "running", engine_state: state });
+      this.store.run("UPDATE game_sessions SET status='running',engine_state=?,clock_at=? WHERE session_id=?", state, now, row.session_id);
+      Object.assign(row, { status: "running", engine_state: state, clock_at: now });
       this.mark();
-      if (now < row.deadline!) this.pushRoom(room);
+      changed = true;
     }
-    if (row.status !== "running") return;
-    const end = Math.min(now, row.deadline!);
-    if (!this.hosts.has(row.host_id)) {
-      if (now >= row.deadline!) this.cancel(room, "host-offline", true);
+    if (row.status !== "running") {
+      this.recordClock(room, now);
+      if (changed) this.pushRoom(room);
       return;
     }
+    const end = Math.min(now, row.deadline!);
+    const gameTime = end - clockOffset;
     const online = new Set([...room.members.values()].flatMap(member =>
       member.side !== null && !member.forfeited && this.players.has(member.player_id) ? [member.side] : []));
-    const changed = arena!.tick(end - row.started_at!, end, online);
-    if (changed) this.checkpoint(room);
+    if (arena!.tick(gameTime - row.started_at!, gameTime, online)) {
+      this.checkpoint(room, end);
+      changed = true;
+    } else this.recordClock(room, end);
     if (this.checkResult(room, end, now >= row.deadline!)) return;
-    this.maybeRevealDouble(room, now);
-    if (changed) this.pushRoom(room);
+    const revealed = this.maybeRevealDouble(room, now);
+    if (changed || revealed) this.pushRoom(room);
   }
 
-  private maybeRevealDouble(room: Room, now: number) {
+  private recordClock({ row }: Room, now: number) {
+    if (row.clock_at != null && now - row.clock_at < clockCheckpointMs) return;
+    this.store.run("UPDATE game_sessions SET clock_at=? WHERE session_id=?", now, row.session_id);
+    row.clock_at = now;
+  }
+
+  private maybeRevealDouble(room: Room, now: number, finishing = false) {
     const { row, members, arena } = room;
-    if (row.double_due_at == null || row.double_player_id || now < row.double_due_at || row.deadline! - now < 5000) return;
-    if (this.playedSides(room).size < MIN_MATCH_PLAYERS) return;
+    if (row.double_due_at == null || row.double_player_id) return false;
+    if (!finishing && (now - (row.paused_ms ?? 0) < row.double_due_at || row.deadline! - now < 5000)) return false;
+    if (this.playedSides(room).size < MIN_MATCH_PLAYERS) return false;
     const candidates = [...members.values()].filter(member =>
-      member.participated && member.played && !member.forfeited && member.side !== null &&
-      this.players.has(member.player_id) && !arena!.panel(member.side, false).completion);
-    if (!candidates.length) return;
+      member.route_step > 0 && member.participated && member.played && !member.forfeited && member.side !== null &&
+      this.players.has(member.player_id) && (finishing || !arena!.panel(member.side, false).completion));
+    if (!candidates.length) return false;
     const member = candidates[randomInt(candidates.length)];
     const change = this.store.run("UPDATE game_sessions SET double_player_id=?,double_started_at=? WHERE session_id=? AND status='running' AND double_player_id IS NULL",
       member.player_id, now, row.session_id);
-    if (Number(change.changes) !== 1) return;
+    if (Number(change.changes) !== 1) return false;
     Object.assign(row, { double_player_id: member.player_id, double_started_at: now });
     const challenge = { playerId: member.player_id, playerName: this.store.player(member.player_id)!.player_name,
       startedAt: now, tier: routeTier(member.route_step) };
     const event = { sessionId: row.session_id, challenge };
     for (const id of members.keys()) this.players.get(id)?.emit("game:double-challenge", event);
     this.hosts.get(row.host_id)?.emit("game:double-challenge", event);
-    this.pushRoom(room);
+    return true;
   }
 
   private finish(room: Room, reason: EndReason, now: number, winner: number | null) {
     const { row, members, arena } = room;
-    arena!.finish();
+    this.maybeRevealDouble(room, now, true);
+    const membersBySide = new Map<number, number>();
+    for (const { side } of members.values()) {
+      if (side !== null) membersBySide.set(side, (membersBySide.get(side) ?? 0) + 1);
+    }
+    const duration = now - row.started_at! - (row.paused_ms ?? 0);
     const outcomes: Outcome[] = [...members.values()].map(member => {
       const participated = Boolean(member.participated && member.played);
       const side = member.side!;
-      const won = Boolean(participated && winner === side && !member.forfeited && this.players.has(member.player_id));
-      const { scene, progress } = arena!.panel(side, participated);
+      const eligible = participated && !member.forfeited && this.players.has(member.player_id);
       return {
-        playerId: member.player_id, teamId: member.team_id, participated, won, step: member.route_step,
-        duration: participated ? now - row.started_at! : 0,
+        playerId: member.player_id, teamId: member.team_id, participated, step: member.route_step,
+        assisting: member.route_step === 0, won: eligible && winner === side, tied: eligible && winner === null,
+        duration: participated ? duration : 0,
         metrics: participated ? {
-          progress: progress ?? undefined,
-          ...(scene?.kind === "quiz" ? { attempted: scene.attempted, correct: scene.correct } : {})
+          progress: arena!.panel(side, false).progress ?? undefined,
+          ...arena!.playerAnswers(side, member.player_id, (membersBySide.get(side) ?? 0) > 1)
         } : undefined
       };
     });
     if (!settle(this.store, row, outcomes, reason, now, winner)) return;
+    arena!.finish();
     Object.assign(row, { status: "finished", ended_at: now, reason, winner_side: winner });
     this.rooms.delete(row.station_id);
     this.lastAtStation.set(row.station_id, room);
@@ -603,27 +698,42 @@ export class Campus {
       player?.emit("score:result", result);
       player?.emit("player:update", this.playerView(result.playerId));
       this.hosts.get(row.host_id)?.emit("score:result", result);
-      if (!result.participated) player?.emit("system:error", {
+      if (!result.participated && !result.assisting) player?.emit("system:error", {
         error: "這場沒有完成有效操作。請重新配對挑戰這一關。", code: "no-play"
       });
     }
     this.mark();
   }
 
+  voidResult(sessionId: string, reason: string) {
+    const { voidedAt, players } = this.store.voidSession(sessionId, reason, this.now());
+    for (const [stationId, room] of this.lastAtStation) {
+      if (room.row.session_id !== sessionId) continue;
+      room.arena?.destroy();
+      this.lastAtStation.delete(stationId);
+    }
+    for (const id of players) {
+      this.players.get(id)?.emit("system:error", { error: "管理員已撤銷一場成績，闖關進度及積分已更新。", code: "result-voided" });
+    }
+    this.mark();
+    this.flush();
+    return { voidedAt };
+  }
+
   private cancel(room: Room, reason: EndReason, requeue = false) {
     const { row } = room;
     const now = this.now();
     this.store.transaction(() => {
-      this.store.run("UPDATE game_sessions SET status='cancelled',ended_at=?,reason=? WHERE session_id=?", now, reason, row.session_id);
+      this.store.run("UPDATE game_sessions SET status='cancelled',ended_at=?,reason=?,paused_at=NULL WHERE session_id=?", now, reason, row.session_id);
       if (!requeue) return;
       for (const member of room.members.values()) {
-        const eligible = member.checked_in && this.players.has(member.player_id) && !member.forfeited;
+        const eligible = member.checked_in && !member.forfeited && (reason === "host-offline" || this.players.has(member.player_id));
         if (eligible && (reason !== "no-play" || member.played)) {
-          this.store.run("INSERT OR IGNORE INTO match_search(player_id,queued_at) VALUES (?,?)", member.player_id, now);
+          this.requeue(member, now);
         }
       }
     });
-    Object.assign(row, { status: "cancelled", reason });
+    Object.assign(row, { status: "cancelled", reason, ended_at: now, paused_at: null });
     this.rooms.delete(row.station_id);
     this.pushRoom(room, "game:finish");
     const notice = reason === "no-play" ? "本場沒有兩方完成操作。已操作的玩家會重新配對。"

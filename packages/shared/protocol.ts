@@ -64,7 +64,8 @@ export interface Quiz {
 export interface ArcadeActor { kind: string; x: number; y: number; width: number; height: number; tint?: number }
 export interface Arcade { kind: "arcade"; theme: "space" | "road" | "desert"; actors: ArcadeActor[]; rows?: string[] }
 export type Scene = Board | Tubes | Quiz | Arcade;
-export interface ResultMetrics { progress?: Progress; attempted?: number; correct?: number }
+export interface AnswerStats { attempted: number; correct: number }
+export interface ResultMetrics extends Partial<AnswerStats> { progress?: Progress; sideAnswers?: AnswerStats }
 
 export interface Result {
   playerId: string;
@@ -75,6 +76,7 @@ export interface Result {
   round: number;
   step: number | null;
   participated: boolean;
+  assisting: boolean;
   outcome: "win" | "lose" | "absent";
   tied: boolean;
   rawPoints: number;
@@ -88,7 +90,7 @@ export interface Result {
 export interface TeamResult { sessionId: string; teamId: string; gameId: string; round: number; rawTotal: number; average: number; date: number }
 export interface PlayerIdentity { id: string; name: string; teamId: string; totalScore: number; connected: boolean }
 export interface PlayerRank extends PlayerIdentity {
-  rank: number; teamName: string; completed: number; wins: number; losses: number;
+  rank: number; teamName: string; completed: number; wins: number; ties: number; losses: number;
   soloScore: number; multiScore: number; duration: number;
 }
 export interface TeamRank {
@@ -99,7 +101,7 @@ export interface Leaderboard { players: PlayerRank[]; teams: TeamRank[] }
 export interface Member {
   id: string; name: string; connected: boolean; ready: boolean; participated: boolean;
   forfeited: boolean; progress?: Progress; tint: number;
-  checkedIn: boolean; position: number; side: number | null;
+  checkedIn: boolean; position: number; side: number | null; assisting?: boolean;
 }
 export type SideCompletion = "cleared" | "exhausted";
 export interface MatchPanel {
@@ -113,6 +115,7 @@ export interface MatchView {
 export interface RoomView {
   id: string; stationId: string; gameId: string; hostId: string; teamId: string | null; round: number;
   status: RoomStatus; startedAt: number | null; deadline: number | null; reason: EndReason | null;
+  pausedAt?: number;
   now: number; members: Member[]; scene: Scene | null; progress: Progress | null; seq: number;
   doubleChallenge: DoubleChallenge | null;
   course: { step: number; tier: Difficulty } | null;
@@ -132,7 +135,8 @@ export interface CampusState {
 export interface QueueView { stationId: string; position: number }
 export interface RouteView {
   completed: number; searching: boolean;
-  next: { step: number; tier: Difficulty; gameId: string; stationId: string } | null;
+  assisting?: boolean;
+  next: { step: number | null; tier: Difficulty; gameId: string; stationId: string } | null;
 }
 export interface PlayerView {
   player: PlayerIdentity; teamRank: number; results: Result[]; queue: QueueView | null;
@@ -148,7 +152,7 @@ export interface AdminState {
   competitionId: number; players: (PlayerIdentity & { stationId: string | null; needsLink: boolean })[];
   audit: { action: string; detail: string; date: number }[];
   connections: { sockets: number; players: number; hosts: number; errors: number };
-  sessions: { id: string; stationId: string; gameId: string; competitionId: number; teamId: string | null; round: number; step: number | null; status: RoomStatus; startedAt: number | null; endedAt: number; reason: EndReason | null }[];
+  sessions: { id: string; stationId: string; gameId: string; competitionId: number; teamId: string | null; round: number; step: number | null; status: RoomStatus; startedAt: number | null; endedAt: number; reason: EndReason | null; voidedAt: number | null }[];
 }
 
 export interface ClientEvents {
@@ -159,6 +163,7 @@ export interface ClientEvents {
   "player:leave": (body: null, ack: (value: Ack) => void) => void;
   "team:join": (body: { teamId: string }, ack: (value: Ack<PlayerView>) => void) => void;
   "match:find": (body: null, ack: (value: Ack<PlayerView>) => void) => void;
+  "match:assist": (body: null, ack: (value: Ack<PlayerView>) => void) => void;
   "match:cancel": (body: null, ack: (value: Ack<PlayerView>) => void) => void;
   "station:scan": (body: { stationId: string; code: string }, ack: (value: Ack) => void) => void;
   "station:join": (body: { stationId: string }, ack: (value: Ack<PlayerView>) => void) => void;

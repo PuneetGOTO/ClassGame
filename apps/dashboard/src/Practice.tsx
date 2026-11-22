@@ -4,7 +4,7 @@ import { GAMES, categoryLabel, gameById, type Category } from "../../../packages
 import { practiceNames, practiceSeats, type PracticeRole, type PracticeView } from "../../../packages/shared/practice";
 import type { Action } from "../../../packages/shared/protocol";
 import { sideLabels } from "../../../packages/shared/route";
-import { Brand, ErrorText, Qr, RoomClock, Status } from "../../../packages/ui/components";
+import { Brand, ErrorText, Qr, RoomClock, ScreenPauseNotice, Status } from "../../../packages/ui/components";
 import { ArenaPanels, GameControls, RoundOutcome } from "../../../packages/ui/game-view";
 import { RemoteError, message, request, socket, type CampusConnection } from "../../../packages/ui/network";
 
@@ -71,10 +71,10 @@ export function Practice({ connection }: { connection: CampusConnection }) {
 
   async function send(action: Action) {
     const current = active.current;
-    if (current?.round?.status !== "running" || !current.screenOnline || !socket.connected) return;
+    if (current?.round?.status !== "running" || current.round.pausedAt != null || !current.screenOnline || !socket.connected) return;
     try { await request("practice:input", { sessionId: current.round.id, seq: ++seq.current, action }); }
     catch (failure) {
-      if (failure instanceof RemoteError && ["not-running", "rate", "answer-cooldown"].includes(failure.code)) return;
+      if (failure instanceof RemoteError && ["not-running", "rate", "answer-cooldown", "host-offline"].includes(failure.code)) return;
       setError(message(failure));
     }
   }
@@ -102,6 +102,7 @@ export function Practice({ connection }: { connection: CampusConnection }) {
   const game = gameById.get(view.gameId)!;
   const round = view.round;
   const playing = round?.status === "running" || round?.status === "countdown";
+  const screenLost = round?.status === "finished" && round.reason === "host-offline";
   const ready = view.screenOnline && practiceSeats.every(seat => view.seats[seat]);
   const controls = <div className="practice-controls">
     {!playing && <label className="field">選擇遊戲
@@ -121,16 +122,20 @@ export function Practice({ connection }: { connection: CampusConnection }) {
   if (role !== "screen") {
     const side = practiceSeats.indexOf(role);
     return <main id="main" className="controller narrow">
-      <section className="panel play-panel remote-panel" data-enter>
+      <section className="panel play-panel remote-panel" data-enter
+        data-expression={game.controls === "expression" && round?.status === "running" ? "" : undefined}>
         <div className="play-heading"><div><p className="eyebrow">{practiceNames[role]}</p><h1>{game.name}</h1></div>
           {playing && <div className="play-clock"><RoomClock room={round} offset={offset}/></div>}</div>
         <div className="remote-player" data-side={side}><strong>{role} · {sideLabels[side]}</strong>
           <span><Monitor size={18}/> 看大螢幕操作</span></div>
         <ErrorText text={error}/>
         {!online && <p className="notice">正在重新連線</p>}
-        {online && !view.screenOnline && <p className="notice">等待測試大螢幕連線</p>}
-        {round?.status === "finished" && <RoundOutcome winner={round.winner} reason={round.reason} side={side}/>}
-        {online && view.screenOnline && round?.status === "running" &&
+        {round?.pausedAt != null ? <ScreenPauseNotice at={round.pausedAt} offset={offset}/>
+          : online && !view.screenOnline && !screenLost && <p className="notice">等待測試大螢幕連線</p>}
+        {round?.status === "finished" && (round.reason === "host-offline"
+          ? <p className="notice" role="status">大螢幕重連逾時，本局已取消。</p>
+          : <RoundOutcome winner={round.winner} reason={round.reason} side={side}/>)}
+        {online && view.screenOnline && round?.status === "running" && round.pausedAt == null &&
           <GameControls key={round.id} remote={view.remote ?? {}} controls={game.controls} gameId={game.id} offset={offset} send={send}/>}
         {controls}
       </section>
@@ -154,13 +159,16 @@ export function Practice({ connection }: { connection: CampusConnection }) {
     <div className="host-layout">
       <section className="panel host-game" data-enter>
         <div className="host-title"><div><p className="eyebrow">1 對 1</p><h1>{game.name}</h1></div>
-          <div className="host-clock"><RoomClock room={round} offset={offset}/><span>{round?.status === "countdown" ? "開始倒數" : "剩餘時間"}</span></div>
+          <div className="host-clock"><RoomClock room={online ? round : null} offset={offset}/><span>{round?.status === "countdown" ? "開始倒數" : "剩餘時間"}</span></div>
         </div>
+        {!online && playing && <p className="notice" role="status">大螢幕連線中斷，正在重連。</p>}
         {round?.status === "running" ? <ArenaPanels panels={view.panels ?? []} members={players}/>
           : round?.status === "countdown" ? <div className="host-stage countdown-center">
-            <span>拿好手機，準備開局</span><RoomClock room={round} offset={offset}/>
+            <span>拿好手機，準備開局</span><RoomClock room={online ? round : null} offset={offset}/>
           </div>
-          : round?.status === "finished" ? <RoundOutcome winner={round.winner} reason={round.reason}/>
+          : round?.status === "finished" ? round.reason === "host-offline"
+            ? <div className="host-stage idle"><h2>本局已取消</h2><p>大螢幕重連逾時。</p></div>
+            : <RoundOutcome winner={round.winner} reason={round.reason}/>
           : <div className="host-stage idle practice-idle"><GameController size={68} weight="duotone"/>
             <h2>{ready ? "兩支手掣已連線" : "等待手機掃碼連線"}</h2><p>{game.objective}</p>
           </div>}

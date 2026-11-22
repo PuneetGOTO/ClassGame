@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { COUNTDOWN_MS, GAME_MS, GAMES } from "../packages/shared/catalog";
 import type { PracticeView } from "../packages/shared/practice";
 import type { Action, MatchPanel } from "../packages/shared/protocol";
-import { ANSWER_COOLDOWN_MS, STATION_QR_MS } from "../packages/shared/rules";
+import { ANSWER_COOLDOWN_MS, SCREEN_RECONNECT_MS, STATION_QR_MS } from "../packages/shared/rules";
 import { harness, ok, send } from "./socket-helper";
 
 function code(view: PracticeView, seat: "P1" | "P2") {
@@ -152,6 +152,46 @@ test("the last pair of fraction answers settles immediately even when both miss 
     assert.equal(finished.round?.reason, "completed");
     assert.ok(service.time() < started.round!.deadline);
     for (const view of await Promise.all(immediate)) assert.deepEqual(view.round, finished.round);
+  } finally { await service.close(); }
+});
+
+test("the practice screen can resume a round and a longer outage cancels it", async () => {
+  const service = await harness();
+  try {
+    let screen = await service.connect();
+    const [first, second] = await Promise.all([service.connect(), service.connect()]);
+    const joinScreen = (client: typeof screen) => ok(client, "practice:join", { role: "screen", credential: service.practice.key("screen") });
+    const { view } = await joinScreen(screen);
+    await ok(first, "practice:join", { role: "P1", credential: code(view, "P1") });
+    await ok(second, "practice:join", { role: "P2", credential: code(view, "P2") });
+    const gameId = "game-09";
+    await ok(screen, "practice:select", { gameId });
+    const { round } = await ok(screen, "practice:start", null);
+    service.step(COUNTDOWN_MS);
+    const latest = await ok(screen, "practice:select", { gameId });
+    const disconnect = async () => {
+      const paused = new Promise<PracticeView>(resolve => {
+        const receive = (update: PracticeView) => {
+          if (update.round?.pausedAt == null) return;
+          first.off("practice:state", receive);
+          resolve(update);
+        };
+        first.on("practice:state", receive);
+      });
+      screen.disconnect();
+      return paused;
+    };
+    assert.equal((await disconnect()).round?.pausedAt, service.time());
+    service.step(15_000);
+    screen = await service.connect();
+    const resumed = (await joinScreen(screen)).view;
+    assert.equal(resumed.round?.deadline, round!.deadline + 15_000);
+    assert.deepEqual(resumed.panels, latest.panels);
+    await disconnect();
+    service.step(SCREEN_RECONNECT_MS);
+    const stopped = (await ok(second, "practice:select", { gameId })).round;
+    assert.deepEqual([stopped?.status, stopped?.reason, stopped?.winner], ["finished", "host-offline", null]);
+    assert.equal(service.campus.adminView().sessions.length, 0);
   } finally { await service.close(); }
 });
 

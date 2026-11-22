@@ -6,6 +6,7 @@ import QRCode from "qrcode";
 import { teamColors } from "../shared/catalog";
 import type { DoubleChallenge, Progress, RoomView, StationView } from "../shared/protocol";
 import { routePoints, type Difficulty } from "../shared/route";
+import { SCREEN_RECONNECT_MS } from "../shared/rules";
 
 export const fmtScore = (value: number) => new Intl.NumberFormat("zh-HK", { maximumFractionDigits: 2 }).format(value);
 export const fmtChange = (value: number) => (value > 0 ? "+" : "") + fmtScore(value);
@@ -67,24 +68,30 @@ export function DoubleBanner({ challenge, playerId, team, tier = 1 }: { challeng
     <b aria-hidden="true">×2</b>
   </div>;
 }
-export function Countdown({ end, offset, className = "", secondsOnly = false }: {
-  end: number | null | undefined; offset: number; className?: string; secondsOnly?: boolean
+export function Countdown({ end, offset, className = "", secondsOnly = false, frozenAt }: {
+  end: number | null | undefined; offset: number; className?: string; secondsOnly?: boolean; frozenAt?: number;
 }) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
-    if (!end) return;
+    if (!end || frozenAt != null) return;
     setNow(Date.now());
     const interval = setInterval(() => setNow(Date.now()), 100);
     return () => clearInterval(interval);
-  }, [end]);
-  const seconds = end == null ? null : Math.max(0, Math.ceil((end - now - offset) / 1000));
+  }, [end, frozenAt]);
+  const seconds = end == null ? null : Math.max(0, Math.ceil((end - (frozenAt ?? now + offset)) / 1000));
   const text = seconds === null ? "—" : secondsOnly ? String(seconds) :
     [Math.floor(seconds / 60), seconds % 60].map(n => String(n).padStart(2, "0")).join(":");
   return <span className={"clock " + (seconds !== null && seconds <= 10 ? "clock-low " : "") + className}>{text}</span>;
 }
-export function RoomClock({ room, offset }: { room: Pick<RoomView, "status" | "startedAt" | "deadline"> | null | undefined; offset: number }) {
+export function RoomClock({ room, offset }: {
+  room: Pick<RoomView, "status" | "startedAt" | "deadline" | "pausedAt"> | null | undefined; offset: number;
+}) {
   return <Countdown end={room?.status === "countdown" ? room.startedAt : room?.status === "running" ? room.deadline : undefined}
-    offset={offset} secondsOnly={room?.status === "countdown"}/>;
+    offset={offset} frozenAt={room?.pausedAt} secondsOnly={room?.status === "countdown"}/>;
+}
+export function ScreenPauseNotice({ at, offset }: { at: number; offset: number }) {
+  return <p className="notice" role="status">大螢幕連線中斷，遊戲已暫停。等候重連 <Countdown end={at + SCREEN_RECONNECT_MS}
+    offset={offset} secondsOnly/> 秒。</p>;
 }
 export function ProgressBar({ progress }: { progress: Progress }) {
   return <div className="progress">

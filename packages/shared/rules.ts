@@ -9,6 +9,7 @@ export const MAX_MATCH_PLAYERS = 4;
 export const MATCH_GROUP_WAIT_MS = 2500;
 export const MATCH_WAIT_MS = 10_000;
 export const MATCH_ARRIVAL_MS = 120_000;
+export const SCREEN_RECONNECT_MS = 30_000;
 export const ANSWER_COOLDOWN_MS = 2000;
 export const HOST_SCREEN_VERSION = 2;
 

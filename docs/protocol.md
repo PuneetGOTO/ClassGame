@@ -24,7 +24,7 @@ Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入
 | 客戶端 → 伺服器 | `campus:watch`、`clock:sync` | 訂閱校園狀態及對時 |
 | 客戶端 → 伺服器 | `player:join`、`player:reconnect`、`player:leave` | 登記、恢復身分、離開 |
 | 客戶端 → 伺服器 | `team:join` | 請求更換隊伍 |
-| 客戶端 → 伺服器 | `match:find`、`match:cancel` | 進入配對、退出配對或候場 |
+| 客戶端 → 伺服器 | `match:find`、`match:assist`、`match:cancel` | 尋找對手、報名陪打、退出配對或候場 |
 | 客戶端 → 伺服器 | `station:scan`、`station:join`、`station:leave` | 驗證房間入場碼、入場或排隊、離開站點 |
 | 客戶端 → 伺服器 | `game:ready`、`game:input` | 就緒狀態、移動、點格、動作或送出答案 |
 | 客戶端 → 伺服器 | `host:register`、`admin:watch` | 登記固定主機、訂閱授權後台資訊 |
@@ -41,9 +41,13 @@ Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入
 
 答題經伺服器接受後，該玩家須等候 2,000 毫秒才能再送出答案。正式賽的 `match.remote` 和練習房的 `remote` 傳回個人的 `answerAvailableAt`。提早送出目前題目的答案會收到 `answer-cooldown`。同方其他手機各自計時。
 
+大螢幕斷線時傳回 `pausedAt`，手機以該時間凍結場次倒數。重連成功便推移遊戲截止時間及答題等候時間。連續斷線達 30 秒會取消場次，正式賽已報到的玩家可重新配對。
+
 `station:scan` 依伺服器時間驗證房間、大螢幕目前的連線及 10 秒有效期。驗證成功後，該手機連線有最多 90 秒使用該入場資格，受本場報到時限約束。每位玩家掃描配對房間的 QR Code 後可標記準備。至少兩人報到並就緒才可倒數。
 
 `player:update` 的 `route` 傳送完成關數、配對狀態和下一站。大螢幕收到 `match.panels`，手機收到 `match.remote`。相同種子讓各方的初始盤面或題組一致，手機輸入只影響該玩家的陣營。
+
+陪打由 `match:assist` 報名。陪打參賽者的 `assisting` 為真，結算記錄保留勝負及操作資料，計入分為 0。正式賽同方答題紀錄的 `metrics.attempted` 與 `metrics.correct` 代表個人，`metrics.sideAnswers` 代表該方合計。
 
 大螢幕註冊須提供介面版本 `screenVersion: 2`。舊版畫面重新整理後會以瀏覽器內原有的專屬金鑰連線。
 
@@ -63,9 +67,9 @@ Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入
 | `audit_log`、`settings` | 後台操作記錄及上傳地圖 |
 | `floor_maps` | 三樓與四樓各自的地圖更換紀錄 |
 
-`game_results` 的 `(session_id, player_id)` 唯一。現制的同屆、同玩家、同關次出席結果也具唯一約束。場次狀態轉移、結果寫入及排行榜來源更新在同一個 SQLite 交易內完成。SQLite 依關次導出難度權重和計入分。
+`game_results` 的 `(session_id, player_id)` 唯一。同屆、同玩家、同關次的有效正式成績也具唯一約束。場次狀態轉移、結果寫入及排行榜來源更新在同一個 SQLite 交易內完成。管理員使用 `POST /api/admin/sessions/:id/void` 連同撤銷原因，交易內標記原始紀錄、重算受影響玩家的成績及寫入稽核。SQLite 依關次導出難度權重和計入分。
 
-遷移第 3 版將站點配對到三樓與四樓，第 4 版換算重繪圖座標，第 5 版加入個人路線與計分權重，第 6 版保存對戰配對、陣營及每位玩家的計分難度。第 5 版已結算的成績沿用原分數並累計到玩家的十關進度。結果的 `baseAwarded` 為依難度計算的基礎分，`awarded` 包括雙倍調整。
+遷移第 3 版將站點配對到三樓與四樓，第 4 版換算重繪圖座標，第 5 版加入個人路線與計分權重，第 6 版保存對戰配對、陣營及每位玩家的計分難度。第 7 版保存大螢幕暫停時鐘、陪打、和局及撤銷時間，舊版 2 對 2 的答題合計標為本方紀錄。結果的 `baseAwarded` 為依難度計算的基礎分，`awarded` 包括雙倍調整。
 
 ## 註冊插件
 

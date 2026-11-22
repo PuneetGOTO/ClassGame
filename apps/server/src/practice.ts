@@ -3,6 +3,7 @@ import { COUNTDOWN_MS, GAME_MS, gameById } from "../../../packages/shared/catalo
 import { practiceSeats, type PracticeRole, type PracticeSeat, type PracticeView } from "../../../packages/shared/practice";
 import type { ClientEvents } from "../../../packages/shared/protocol";
 import type { PluginFactory } from "../../../packages/game-sdk";
+import { SCREEN_RECONNECT_MS } from "../../../packages/shared/rules";
 import { Arena, type ArenaResult } from "./arena";
 import type { CampusSocket } from "./campus";
 import { matchesSecret } from "./config";
@@ -10,7 +11,7 @@ import { checkStationQr, qrExpiry, stationQr } from "./station-qr";
 import { RequestError } from "./store";
 
 type Input = Parameters<ClientEvents["practice:input"]>[0];
-type Round = NonNullable<PracticeView["round"]> & { arena: Arena; sequence: Record<PracticeSeat, number> };
+type Round = NonNullable<PracticeView["round"]> & { arena: Arena; pausedMs: number; sequence: Record<PracticeSeat, number> };
 const sideOf: Record<PracticeSeat, number> = { P1: 0, P2: 1 };
 const bothSides = new Set([0, 1]);
 
@@ -51,6 +52,7 @@ export class Practice {
       previous.emit("practice:replaced", null);
       previous.disconnect(true);
     }
+    if (role === "screen" && this.round?.pausedAt != null) this.advance(this.now());
     this.publish(socket);
     return { token, view: this.view(role) };
   }
@@ -58,6 +60,11 @@ export class Practice {
   disconnect(socket: CampusSocket) {
     const role = socket.data.practiceRole;
     if (!role || this.peers.get(role) !== socket) return;
+    if (role === "screen" && this.round && this.round.status !== "finished") {
+      const now = this.now();
+      this.advance(now);
+      if (this.round.status === "countdown" || this.round.status === "running") this.round.pausedAt = now;
+    }
     this.peers.delete(role);
     this.publish();
   }
@@ -74,13 +81,14 @@ export class Practice {
       role, gameId: this.gameId, screenOnline: this.peers.has("screen"),
       seats: { P1: this.peers.has("P1"), P2: this.peers.has("P2") },
       round: state ? {
-        id: state.id, status: state.status, startedAt: state.startedAt, deadline: state.deadline, winner: state.winner, reason: state.reason
+        id: state.id, status: state.status, startedAt: state.startedAt + state.pausedMs, deadline: state.deadline,
+        winner: state.winner, reason: state.reason, pausedAt: state.pausedAt
       } : null,
       seq: role === "screen" ? 0 : state?.sequence[role] ?? 0,
       ...(role === "screen" ? {
         entries: this.entries(),
         ...(state?.status === "running" && { panels: [state.arena.panel(0), state.arena.panel(1)] })
-      } : { remote: state?.status === "running" ? state.arena.remote(sideOf[role], role) : {} })
+      } : { remote: state?.status === "running" ? state.arena.remote(sideOf[role], role, state.pausedMs) : {} })
     };
   }
 
@@ -128,7 +136,7 @@ export class Practice {
     this.clearRound();
     this.round = {
       id: randomUUID(), arena, status: "countdown", startedAt, deadline: startedAt + GAME_MS,
-      winner: null, reason: null, sequence: { P1: 0, P2: 0 }
+      winner: null, reason: null, pausedMs: 0, sequence: { P1: 0, P2: 0 }
     };
     this.publish(socket);
     return this.view(role);
@@ -157,35 +165,52 @@ export class Practice {
     }
     if (!this.peers.has("screen")) throw new RequestError("請讓測試大螢幕重新連線", "host-offline", 409);
     if (seq <= round.sequence[role]) return { seq: round.sequence[role] };
-    const change = round.arena.input(sideOf[role], role, action, now - round.startedAt, now);
+    const gameNow = now - round.pausedMs;
+    const change = round.arena.input(sideOf[role], role, action, gameNow - round.startedAt, gameNow);
     round.sequence[role] = seq;
     const result = round.arena.result(bothSides);
-    if (result) this.finish(round, result);
+    if (result) this.finish(round, result.winner, result.reason);
     if (change.changed || result) this.publish();
     return { seq };
   }
 
-  private finish(round: Round, { winner, reason }: ArenaResult) {
+  private finish(round: Round, winner: number | null, reason: ArenaResult["reason"] | "host-offline") {
     round.arena.finish();
     round.status = "finished";
     round.winner = winner;
     round.reason = reason;
+    round.pausedAt = undefined;
   }
 
   private advance(now: number) {
     const round = this.round;
-    if (!round || round.status === "finished" || now < round.startedAt) return false;
-    let changed = round.status === "countdown";
-    if (changed) {
+    if (!round || round.status === "finished") return false;
+    let changed = false;
+    if (round.pausedAt != null) {
+      const pause = Math.max(0, now - round.pausedAt);
+      if (pause >= SCREEN_RECONNECT_MS) {
+        this.finish(round, null, "host-offline");
+        return true;
+      }
+      if (!this.peers.has("screen")) return false;
+      round.deadline += pause;
+      round.pausedMs += pause;
+      round.pausedAt = undefined;
+      changed = true;
+    }
+    const gameNow = now - round.pausedMs;
+    if (gameNow < round.startedAt) return changed;
+    if (round.status === "countdown") {
       round.arena.start();
       round.status = "running";
+      changed = true;
     }
-    const time = Math.min(now, round.deadline);
+    const time = Math.min(now, round.deadline) - round.pausedMs;
     const online = new Set(practiceSeats.filter(seat => this.peers.has(seat)).map(seat => sideOf[seat]));
     if (round.arena.tick(time - round.startedAt, time, online)) changed = true;
     const result = round.arena.result(bothSides, now >= round.deadline);
     if (!result) return changed;
-    this.finish(round, result);
+    this.finish(round, result.winner, result.reason);
     return true;
   }
 

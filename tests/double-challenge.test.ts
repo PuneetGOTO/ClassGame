@@ -54,3 +54,29 @@ test("one active controller draws the weighted challenge and its opponent can wi
     assert.equal(leaked, false);
   } finally { await service.close(); }
 });
+
+test("a selected double challenge appears and scores when a 1-question match finishes before the draw time", async () => {
+  const service = await harness();
+  try {
+    await service.host("HOST-11");
+    const [a,b] = await Promise.all([service.player("快答甲"), service.player("快答乙")]);
+    await service.admin("/rules", { doubleChance: 100 }, "PUT");
+    const lobby = await service.match([a,b]);
+    const room = await service.begin([a,b], lobby.stationId);
+    const event = new Promise<DoubleChallenge>(resolve => a.socket.once("game:double-challenge", message => resolve(message.challenge)));
+    const first = (service.panel(a.id).scene as Quiz).prompt!;
+    await service.control(a, { kind: "answer", questionId: first.id, value: "1" });
+    const second = (service.panel(b.id).scene as Quiz).prompt!;
+    const pair = second.numbers!.find((number, index, values) => values.indexOf(number) !== index)!;
+    await service.control(b, { kind: "answer", questionId: second.id, value: "3*8+" + pair + "-" + pair });
+    const selected = service.campus.hostView(room.hostId).room!.doubleChallenge;
+    assert.ok(selected);
+    assert.deepEqual(await event, selected);
+    assert.ok(service.time() < room.startedAt! + 6000);
+    const results = service.store.resultsForSession(room.id);
+    const awarded = results.filter(result => result.doublePoints);
+    assert.equal(awarded.length, 1);
+    assert.equal(awarded[0].playerId, selected.playerId);
+    assert.equal(awarded[0].awarded, selected.playerId === a.id ? -2 : 4);
+  } finally { await service.close(); }
+});

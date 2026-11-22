@@ -34,6 +34,23 @@ test("each of the 20 plugins supplies symmetric but independently controlled sid
   }
 });
 
+test("Rush Hour gives the win to the side whose car is closer to the exit at the deadline", () => {
+  const id = "game-04";
+  const arena = new Arena(plugins.get(id)!, id, 1, 1, [0, 1]);
+  arena.start();
+  const act = (side: number, action: Action) => assert.equal(arena.input(side, String(side), action, 1, 1).played, true);
+  act(0, { kind: "cursor", direction: "right" });
+  act(0, { kind: "action", action: "interact" });
+  act(0, move("down"));
+  act(0, { kind: "cursor", direction: "left" });
+  act(0, { kind: "action", action: "interact" });
+  for (let index = 0; index < 4; index++) act(0, move("right"));
+  act(1, { kind: "cursor", direction: "right" });
+  assert.deepEqual([arena.panel(0).progress?.value, arena.panel(1).progress?.value], [4, 0]);
+  assert.equal(arena.result(new Set([0, 1])), undefined);
+  assert.deepEqual(arena.result(new Set([0, 1]), true), { winner: 0, reason: "timeout" });
+});
+
 for (const number of ["01","03","10","14","18"]) test("HOST-" + number + " accepts controller inputs and settles a winner", async () => {
   const service = await harness();
   try {
@@ -116,7 +133,8 @@ test("in 2 vs 2 teammates share progress but each has a separate two-second answ
         assert.equal(remote(blue[0]).answerAvailableAt, availableAt);
         service.step(1);
       }
-      await service.control(blue[i % 2], answer(scene, arithmetic(scene.prompt!)));
+      if (i === 3) service.step(ANSWER_COOLDOWN_MS);
+      await service.control(blue[i === 1 ? 1 : 0], answer(scene, arithmetic(scene.prompt!)));
       if (i === 0) assert.equal(remote(blue[1]).answerAvailableAt, undefined);
       if (i < 3) assert.equal((snapshot()[0].scene as Quiz).correct,i+1);
       assert.deepEqual(snapshot()[1].scene,frozen);
@@ -125,6 +143,12 @@ test("in 2 vs 2 teammates share progress but each has a separate two-second answ
     assert.ok(results.filter(row => blue.some(player => player.id === row.playerId)).every(row => row.outcome === "win"));
     assert.ok(results.filter(row => orange.some(player => player.id === row.playerId)).every(row => row.outcome === "lose"));
     assert.equal(results.length, 4);
+    for (const [index, player] of blue.entries()) {
+      const metrics = results.find(row => row.playerId === player.id)!.metrics;
+      const own = index === 0 ? 3 : 1;
+      assert.deepEqual([metrics.attempted, metrics.correct, metrics.sideAnswers], [own, own, { attempted: 4, correct: 4 }]);
+    }
+    assert.deepEqual(orange.map(player => results.find(row => row.playerId === player.id)!.metrics.attempted), [1, 1]);
   } finally { await service.close(); }
 });
 
@@ -152,6 +176,8 @@ test("a completed prime quiz records a tie and sends both phones results before 
     assert.equal(room.match?.winner, null);
     const results = service.store.resultsForSession(lobby.id);
     assert.deepEqual(results.map(result => [result.tied, result.awarded]), [[true, 1], [true, 1]]);
+    assert.deepEqual(service.store.leaderboard().players.map(row => [row.wins, row.ties, row.losses, row.totalScore]),
+      [[0, 1, 0, 1], [0, 1, 0, 1]]);
     for (const player of [a,b]) {
       const view = service.campus.playerView(player.id);
       assert.equal(view.room, null);

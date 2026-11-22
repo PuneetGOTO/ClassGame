@@ -88,6 +88,7 @@ export function Host({ connection }: { connection: CampusConnection }) {
   </section></main>;
 
   const { station, room } = host;
+  const live = online && !busy;
   const game = gameById.get(room?.gameId ?? station.gameId)!;
   const mode = room?.match ? modeTitle[room.match.mode] : null;
   const exit = () => {
@@ -98,7 +99,7 @@ export function Host({ connection }: { connection: CampusConnection }) {
   return <main id="main" className="host-display shell">
     <header className="host-top">
       <Brand/><div className="host-meta"><strong>{host.hostId}</strong><span>{floorLabel[station.floor]} · {station.name}</span></div>
-      <div className="host-top-actions"><Status online={online} label={online ? "主機在線" : "正在重連"}/>
+      <div className="host-top-actions"><Status online={live} label={live ? "主機在線" : "正在重連"}/>
         <button className="icon-button" aria-label="切換全螢幕" onClick={() => {
           const action = document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
           void action.catch(() => setError("瀏覽器目前無法切換全螢幕"));
@@ -109,11 +110,14 @@ export function Host({ connection }: { connection: CampusConnection }) {
     <div className="host-layout">
       <section className="panel host-game">
         <div className="host-title"><div><p className="eyebrow">{mode ?? game.english}</p><h1>{game.name}</h1></div>
-          <div className="host-clock"><RoomClock room={room} offset={offset}/><span>{room?.status === "countdown" ? "開始倒數" : "剩餘時間"}</span></div>
+          <div className="host-clock"><RoomClock room={live ? room : null} offset={offset}/><span>{room?.status === "countdown" ? "開始倒數" : "剩餘時間"}</span></div>
         </div>
-        {room?.status === "running" && room.doubleChallenge && <DoubleBanner challenge={room.doubleChallenge} team={false}/>}
+        {!live && room && (room.status === "running" || room.status === "countdown") &&
+          <p className="notice" role="status">大螢幕連線中斷，正在重連。</p>}
+        {(room?.status === "running" || room?.status === "finished") && room.doubleChallenge &&
+          <DoubleBanner challenge={room.doubleChallenge} team={false}/>}
         {room?.status === "running" ? <ArenaPanels panels={room.match?.panels ?? []} members={room.members}/>
-          : room?.status === "countdown" ? <div className="host-stage countdown-center"><span>拿好手機，準備開局</span><RoomClock room={room} offset={offset}/>
+          : room?.status === "countdown" ? <div className="host-stage countdown-center"><span>拿好手機，準備開局</span><RoomClock room={live ? room : null} offset={offset}/>
             <SideRoster room={room}/></div>
           : room?.status === "finished" ? <RoundOutcome winner={room.match?.winner ?? null}
             reason={room.reason === "goal" || room.reason === "completed" || room.reason === "timeout" ? room.reason : null}/>
@@ -124,12 +128,12 @@ export function Host({ connection }: { connection: CampusConnection }) {
       </section>
       <aside className="host-aside">
         <section className="panel host-join"><div className="section-line"><h2><QrCode size={21}/> 手機入場</h2></div>
-          <StationQr entry={host.entry} open={station.open} online={online} offset={offset}/>
+          <StationQr entry={host.entry} open={station.open} online={live} offset={offset}/>
           <span>{station.name}{room?.status === "lobby" && " · " + station.queued + " 人尚未到場"}</span>
         </section>
         <section className="panel host-members"><div className="section-line"><h2><UsersThree size={21}/> 參賽者</h2></div>
           {host.results.length > 0 ? <div className="history-list">{host.results.map(result => <div key={result.playerId}><span>{result.playerName}</span>
-            <strong className={result.awarded < 0 ? "negative-points" : undefined}>{result.participated
+            <strong className={result.awarded < 0 ? "negative-points" : undefined}>{result.assisting ? "陪打 · 0 分" : result.participated
               ? (result.tied ? "和 " : result.outcome === "win" ? "勝 " : "負 ") + fmtChange(result.awarded) + (result.doublePoints ? " · 雙倍" : "")
               : "未計分"}</strong></div>)}</div>
           : room ? <Members room={room}/> : <p className="muted">等待玩家加入場次</p>}

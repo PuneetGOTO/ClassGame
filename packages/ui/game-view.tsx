@@ -166,6 +166,7 @@ function QuizControls({ remote, isExpression, offset, send }: {
   }
   const keys = ["1","2","3","4","5","6","7","8","9","0"];
   const append = (key: string) => setValue(previous => (previous + key).slice(0, 64));
+  const confirm = <button type="submit" className="button primary full" disabled={!value.trim()}>確認答案</button>;
   return <>
     <p className="answer-status" role="status">{seconds ? `請等候 ${seconds} 秒再作答` : submitting ? "正在送出答案…" : ""}</p>
     {choices ? <div className="options remote-choices" role="group" aria-label="答題按鍵">
@@ -178,16 +179,19 @@ function QuizControls({ remote, isExpression, offset, send }: {
     }}>
       <fieldset className="answer-form" disabled={locked}>
         <label htmlFor="answer">{isExpression ? "輸入算式" : "輸入答案"}</label>
-        <input id="answer" inputMode={isExpression ? "text" : "numeric"} value={value} maxLength={64}
+        <input id="answer" inputMode={isExpression ? "none" : "numeric"} value={value} maxLength={64}
           autoComplete="off" onChange={event => setValue(event.target.value)} placeholder={isExpression ? "把四個數字各用一次" : "答案"}/>
-        {isExpression && <div className="expression-keys">{["+","−","×","÷","(",")"].map(operator =>
-          <button className="control" type="button" key={operator} onClick={() => append(operator)}>{operator}</button>)}</div>}
-        <div className="keypad">
-          {keys.map(key => <button type="button" className="control" key={key} onClick={() => append(key)}>{key}</button>)}
-          <button type="button" className="control" aria-label="刪除" onClick={() => setValue(value.slice(0, -1))}><Eraser size={20}/></button>
-          <button type="button" className="control" onClick={() => setValue("")}>清除</button>
+        {isExpression && confirm}
+        <div className="answer-keys">
+          {isExpression && <div className="expression-keys">{["+","−","×","÷","(",")"].map(operator =>
+            <button className="control" type="button" key={operator} onClick={() => append(operator)}>{operator}</button>)}</div>}
+          <div className="keypad">
+            {keys.map(key => <button type="button" className="control" key={key} onClick={() => append(key)}>{key}</button>)}
+            <button type="button" className="control" aria-label="刪除" onClick={() => setValue(value.slice(0, -1))}><Eraser size={20}/></button>
+            <button type="button" className="control" onClick={() => setValue("")}>清除</button>
+          </div>
         </div>
-        <button type="submit" className="button primary full" disabled={!value.trim()}>確認答案</button>
+        {!isExpression && confirm}
       </fieldset>
     </form>}
   </>;
@@ -250,7 +254,7 @@ export function Members({ room, self }: { room: RoomView; self?: string }) {
   return <div className="members">
     {room.members.map(member => <div className="member" key={member.id}>
       <span className="member-avatar" style={colorStyle(member.tint)}>P{member.position}</span>
-      <span className="member-name">{member.name}{member.id === self ? "（你）" : ""}</span>
+      <span className="member-name">{member.name}{member.id === self ? "（你）" : ""}{member.assisting && " · 陪打"}</span>
       {member.progress && <span className="monotext">{fmtScore(member.progress.value)}/{member.progress.target}</span>}
       <Status online={member.connected && !member.forfeited} label={member.forfeited ? "已退出" : !member.connected ? "離線"
         : !member.checkedIn ? "尚未到場" : member.ready ? "已就緒" : "準備中"}/>

@@ -208,7 +208,7 @@ try {
   assert.equal(await dashboard.locator("tbody tr").count(), 10);
 
   await wrongHost.close();
-  const pipeHost = await openHost("HOST-03");
+  let pipeHost = await openHost("HOST-03");
   const rival = losers[0].page;
   await Promise.all([phone, rival].map(async page => {
     await page.goto(origin + "/controller");
@@ -236,6 +236,25 @@ try {
     await pipeHost.screenshot({ path: "test-results/host-pipe-duel.png", animations: "disabled" });
     await phone.screenshot({ path: "test-results/phone-direction.png", animations: "disabled" });
   }
+  const volunteer = losers[1].page;
+  await volunteer.goto(origin + "/controller");
+  await volunteer.getByRole("button", { name: "繼續闖關" }).click();
+  await volunteer.getByRole("button", { name: "報名陪打" }).tap();
+  await volunteer.getByRole("heading", { name: "等候陪打配對" }).waitFor();
+  await volunteer.getByRole("button", { name: "取消陪打" }).tap();
+  await volunteer.getByRole("button", { name: "尋找對手" }).waitFor();
+
+  await pipeHost.close();
+  const paused = phone.getByText(/大螢幕連線中斷，遊戲已暫停/);
+  await paused.waitFor();
+  const frozenTime = await phone.locator(".play-clock").innerText();
+  await direction.waitFor({ state: "hidden" });
+  await wait(1100);
+  assert.equal(await phone.locator(".play-clock").innerText(), frozenTime);
+  pipeHost = await openHost("HOST-03");
+  await direction.waitFor();
+  await paused.waitFor({ state: "hidden" });
+  assert.equal(await pipeHost.locator(".arena-panel .board").count(), 2);
 
   if (!process.env.SKIP_BROWSER_ADMIN) {
     await dashboard.goto(origin + "/admin");
@@ -247,7 +266,15 @@ try {
     await dashboard.getByRole("button", { name: "場次紀錄" }).click();
     await dashboard.getByRole("button", { name: "查看結算" }).first().click();
     await dashboard.getByRole("dialog").getByRole("rowheader", { name: "瀏覽器玩家", exact: true }).waitFor();
-    await dashboard.getByRole("button", { name: "關閉" }).click();
+    await dashboard.getByRole("button", { name: "撤銷成績", exact: true }).click();
+    await dashboard.getByLabel("撤銷原因").fill("瀏覽器驗證原始成績的撤銷");
+    await dashboard.getByRole("button", { name: "確認撤銷成績" }).click();
+    await dashboard.getByText("已撤銷場次成績，排行榜已更新").waitFor();
+    await dashboard.getByText("成績已撤銷", { exact: true }).waitFor();
+    await eventually(async () => {
+      const campus = await (await fetch(origin + "/api/campus")).json();
+      assert.ok(campus.leaderboard.players.every(player => player.totalScore === 0));
+    });
     const downloadPromise = dashboard.waitForEvent("download");
     await dashboard.getByRole("button", { name: "匯出 CSV" }).click();
     const download = await downloadPromise;
@@ -302,7 +329,17 @@ try {
     await practicePhones[1].getByRole("heading", { name: "二十四點", exact: true }).waitFor();
     await practiceScreen.getByRole("button", { name: "開始測試" }).click();
     const expression = practicePhones[0].getByRole("textbox", { name: "輸入算式" });
-    await expression.fill("1");
+    await practicePhones[0].setViewportSize({ width: 320, height: 568 });
+    await practicePhones[0].getByRole("button", { name: "1", exact: true }).tap();
+    assert.equal(await expression.inputValue(), "1");
+    const confirmOnScreen = await practicePhones[0].getByRole("button", { name: "確認答案" }).evaluate(button => {
+      const rect = button.getBoundingClientRect();
+      return scrollY === 0 && rect.top >= 0 && rect.bottom <= innerHeight && document.documentElement.scrollWidth <= innerWidth;
+    });
+    assert.equal(confirmOnScreen, true, "expression submit must fit at 320 × 568");
+    if (process.env.CAMPUS_SCREENSHOTS) {
+      await practicePhones[0].screenshot({ path: "test-results/game24-compact.png", animations: "disabled" });
+    }
     await practicePhones[0].getByRole("button", { name: "確認答案" }).tap();
     await practicePhones[0].getByText(/請等候 [12] 秒再作答/).waitFor();
     assert.equal(await expression.isDisabled(), true);
@@ -314,6 +351,7 @@ try {
     await expression.fill("2");
     await practicePhones[0].getByRole("button", { name: "確認答案" }).tap();
     await attempted(practiceScreen.locator(".arena-panel").first(), 2);
+    await practicePhones[0].setViewportSize({ width: 390, height: 844 });
     await practicePhones[0].getByRole("button", { name: "結束這局" }).tap();
     await practicePhones[1].getByLabel("選擇遊戲").selectOption("game-03");
     await practiceScreen.getByRole("heading", { name: "水管拼接", exact: true }).waitFor();
