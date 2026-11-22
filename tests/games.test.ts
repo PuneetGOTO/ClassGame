@@ -231,23 +231,21 @@ test("15 Oasis shares items and counts each teammate delivering once", () => {
   assert.equal(game.getProgress().value,5);
   assert.ok(ids.every(id => game.checkWin(id)));
 });
-for (const [num,name] of [[16,"BrowserQuest"],[17,"WebCraft"]] as const) {
-  test(num + " " + name + " resolves authoritative combat, items and every player's arrival", () => {
-    const game = factory(num,703,ids);
-    const { state,send,go,approach } = questControl(game);
-    for (const [i,enemy] of state().enemies.entries()) {
-      approach(ids[i],enemy.position);
-      while (state().enemies[i].hp > 0) send(ids[i],action("interact"));
-    }
-    for (const [i,item] of state().items.entries()) {
-      go(ids[i],item);
-      send(ids[i],action("interact"));
-    }
-    for (const id of ids) go(id,state().board.exit);
-    assert.ok(game.isComplete());
-    assert.ok(ids.every(id => game.checkWin(id)));
-  });
-}
+test("16 BrowserQuest resolves authoritative combat, items and every player's arrival", () => {
+  const game = factory(16,703,ids);
+  const { state,send,go,approach } = questControl(game);
+  for (const [i,enemy] of state().enemies.entries()) {
+    approach(ids[i],enemy.position);
+    while (state().enemies[i].hp > 0) send(ids[i],action("interact"));
+  }
+  for (const [i,item] of state().items.entries()) {
+    go(ids[i],item);
+    send(ids[i],action("interact"));
+  }
+  for (const id of ids) go(id,state().board.exit);
+  assert.ok(game.isComplete());
+  assert.ok(ids.every(id => game.checkWin(id)));
+});
 test("20 Math Breakout shares bricks and requires individual contributions", () => {
   const game = factory(20,87,ids);
   for (let i = 0; i < 15; i++) {

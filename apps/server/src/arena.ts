@@ -235,6 +235,7 @@ export class Arena {
       if (winners.length) {
         return { winner: winners.length === 1 ? winners[0] : null, reason: timeUp ? "timeout" : "goal" };
       }
+      if (this.sharedEngine.isComplete()) return { winner: null, reason: timeUp ? "timeout" : "goal" };
       if (!timeUp) return;
       const ranked = [...eligible].map(side => {
         const progress = this.panel(side, false).progress;

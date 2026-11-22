@@ -7,13 +7,15 @@ export const COUNTDOWN_MS = 3_000;
 export const LOBBY_MS = 90_000;
 export const SCORE_SCALE = TEAM_SIZE;
 export const CROSS_ROAD_ID = "game-07";
+export const WEBCRAFT_ID = "game-17";
 export const NUMBER_HUNT_ID = "game-19";
 export const VOLLEYBALL_ID = "game-21";
 export const AIR_HOCKEY_ID = "game-22";
+export const DOJO_FIGHTER_ID = "game-24";
 
 export type Category = "puzzle" | "adventure" | "math";
 export type Mode = "solo" | "co-op" | "team-quiz";
-export type Controls = "directions" | "cell" | "traffic" | "flight" | "runner" | "quest" | "answer" | "expression" | "volleyball" | "air-hockey";
+export type Controls = "directions" | "cell" | "traffic" | "flight" | "runner" | "quest" | "answer" | "expression" | "volleyball" | "air-hockey" | "dojo-fighter";
 
 export interface GameInfo {
   id: string;
@@ -55,9 +57,20 @@ const catalog: GameInfo[] = entries.map(([name, english, category, mode, control
   id: `game-${String(i + 1).padStart(2, "0")}`, name, english, category, mode, controls, objective,
   ...(controls === "volleyball" || controls === "air-hockey" ? { sharedArena: true } : {})
 }));
+const dojoFighter: GameInfo = {
+  id: DOJO_FIGHTER_ID,
+  name: "和風劍道對決",
+  english: "Dojo Fighter",
+  category: "adventure",
+  mode: "solo",
+  controls: "dojo-fighter",
+  objective: "操控和風武士移動、跳躍並揮刀斬擊對手，支援 1v1 與 2v2（隊友免傷），第 40 秒開啟雙倍傷害決勝時刻，團滅對手或 60 秒總血量較高一方獲勝。",
+  sharedArena: true
+};
+catalog.push(dojoFighter);
 // Retired titles remain available for result history and CSV exports.
 export const gameById = new Map(catalog.map(game => [game.id, game]));
-const replacements = new Map([[CROSS_ROAD_ID, AIR_HOCKEY_ID], [NUMBER_HUNT_ID, VOLLEYBALL_ID]]);
+const replacements = new Map([[CROSS_ROAD_ID, AIR_HOCKEY_ID], [WEBCRAFT_ID, DOJO_FIGHTER_ID], [NUMBER_HUNT_ID, VOLLEYBALL_ID]]);
 export const GAMES = catalog.slice(0, STATION_COUNT).map(game => gameById.get(replacements.get(game.id) ?? game.id)!);
 export const categoryLabel: Record<Category, string> = { puzzle: "解謎", adventure: "冒險", math: "數學" };
 export const modeLabel: Record<Mode, string> = { solo: "單人", "co-op": "隊伍合作", "team-quiz": "隊伍答題" };

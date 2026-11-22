@@ -11,6 +11,6 @@ export const MATCH_WAIT_MS = 10_000;
 export const MATCH_ARRIVAL_MS = 120_000;
 export const SCREEN_RECONNECT_MS = 30_000;
 export const ANSWER_COOLDOWN_MS = 2000;
-export const HOST_SCREEN_VERSION = 4;
+export const HOST_SCREEN_VERSION = 5;
 export const STICK_DEADZONE = 0.1;
 

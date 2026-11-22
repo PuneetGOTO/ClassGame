@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import type { Server, Socket } from "socket.io";
-import { AIR_HOCKEY_ID, COUNTDOWN_MS, GAME_MS, GAMES, gameById, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
+import { AIR_HOCKEY_ID, COUNTDOWN_MS, DOJO_FIGHTER_ID, GAME_MS, GAMES, gameById, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
 import { floorLabel, type Floor } from "../../../packages/shared/floors";
 import {
   DOUBLE_END_MS, DOUBLE_START_MS, HOST_SCREEN_VERSION, MATCH_ARRIVAL_MS, MATCH_WAIT_MS, MIN_MATCH_PLAYERS,
@@ -27,7 +27,7 @@ interface Room { row: SessionRow; members: Map<string, MemberRow>; arena?: Arena
 const resultDisplayMs = 5000;
 const clockCheckpointMs = 1000;
 const hostRefreshMessage = "請重新整理大螢幕頁面，載入新版對戰畫面";
-const minimumScreenVersion = (gameId: string) => gameId === AIR_HOCKEY_ID ? 4 : gameId === VOLLEYBALL_ID ? 3 : 2;
+const minimumScreenVersion = (gameId: string) => gameId === DOJO_FIGHTER_ID ? 5 : gameId === AIR_HOCKEY_ID ? 4 : gameId === VOLLEYBALL_ID ? 3 : 2;
 
 export class Campus {
   private readonly rooms = new Map<string, Room>();

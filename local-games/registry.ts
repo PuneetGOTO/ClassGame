@@ -14,11 +14,11 @@ import fractions from "./game-13";
 import mazeRun from "./game-14";
 import oasis from "./game-15";
 import browserQuest from "./game-16";
-import webCraft from "./game-17";
 import mathDuel from "./game-18";
 import mathBreakout from "./game-20";
 import slimeVolleyball from "./game-21";
 import airHockey from "./game-22";
+import dojoFighter from "./game-24";
 
 export const plugins: ReadonlyMap<string, PluginFactory> = new Map([
   ["game-01", sokoban],
@@ -36,9 +36,9 @@ export const plugins: ReadonlyMap<string, PluginFactory> = new Map([
   ["game-14", mazeRun],
   ["game-15", oasis],
   ["game-16", browserQuest],
-  ["game-17", webCraft],
   ["game-18", mathDuel],
   ["game-20", mathBreakout],
   ["game-21", slimeVolleyball],
-  ["game-22", airHockey]
+  ["game-22", airHockey],
+  ["game-24", dojoFighter]
 ]);
