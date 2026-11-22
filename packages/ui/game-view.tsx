@@ -7,6 +7,7 @@ import { teamColors, type Controls } from "../shared/catalog";
 import type { Action, Direction, MatchEndReason, MatchPanel, Member, RemoteControls, RoomView, Scene, SideCompletion } from "../shared/protocol";
 import { sideLabels } from "../shared/route";
 import { fmtScore, ProgressBar, Status } from "./components";
+import { VolleyballControls } from "./volleyball-controls";
 import { VolleyballCanvas } from "./volleyball-view";
 
 const directions: [Direction, string, typeof ArrowUp][] = [
@@ -205,132 +206,6 @@ function QuizControls({ remote, isExpression, offset, send }: {
       </fieldset>
     </form>}
   </>;
-}
-
-function VolleyballControls({ send }: { send: (action: Action) => Promise<void> }) {
-  const sendRef = useRef(send);
-  sendRef.current = send;
-  const activeDir = useRef<"left" | "right" | null>(null);
-  const [pressedDir, setPressedDir] = useState<"left" | "right" | null>(null);
-  const [jumpActive, setJumpActive] = useState(false);
-
-  const pressDir = (dir: "left" | "right") => {
-    if (activeDir.current === dir) return;
-    activeDir.current = dir;
-    setPressedDir(dir);
-    void sendRef.current({ kind: "action", action: dir === "left" ? "hold-left" : "hold-right" });
-  };
-
-  const releaseDir = (dir?: "left" | "right") => {
-    if (!activeDir.current || (dir && activeDir.current !== dir)) return;
-    activeDir.current = null;
-    setPressedDir(null);
-    void sendRef.current({ kind: "action", action: "release" });
-  };
-
-  const triggerJump = () => {
-    setJumpActive(true);
-    void sendRef.current({ kind: "action", action: "jump" });
-  };
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (["INPUT", "TEXTAREA", "SELECT"].includes((event.target as HTMLElement)?.tagName)) return;
-      if (event.repeat) return;
-      const key = event.key.toLowerCase();
-      if (key === "arrowleft" || key === "a") {
-        event.preventDefault();
-        pressDir("left");
-      } else if (key === "arrowright" || key === "d") {
-        event.preventDefault();
-        pressDir("right");
-      } else if (event.code === "Space" || key === "arrowup" || key === "w") {
-        event.preventDefault();
-        triggerJump();
-      }
-    };
-    const onKeyUp = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase();
-      if (key === "arrowleft" || key === "a") releaseDir("left");
-      else if (key === "arrowright" || key === "d") releaseDir("right");
-      else if (event.code === "Space" || key === "arrowup" || key === "w") setJumpActive(false);
-    };
-    const onBlur = () => {
-      releaseDir();
-      setJumpActive(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("blur", onBlur);
-      releaseDir();
-    };
-  }, []);
-
-  return (
-    <div className="volleyball-controls" role="group" aria-label="排球手掣">
-      <div className="volleyball-move-pad">
-        <button
-          type="button"
-          className={"control volleyball-btn" + (pressedDir === "left" ? " is-active" : "")}
-          aria-label="向左移動"
-          onPointerDown={event => {
-            if (event.button !== 0 && event.pointerType === "mouse") return;
-            event.preventDefault();
-            event.currentTarget.setPointerCapture(event.pointerId);
-            pressDir("left");
-          }}
-          onPointerUp={() => releaseDir("left")}
-          onPointerCancel={() => releaseDir("left")}
-          onLostPointerCapture={() => releaseDir("left")}
-          onContextMenu={event => event.preventDefault()}
-        >
-          <ArrowLeft size={30} weight="bold" />
-          <span>左移</span>
-        </button>
-        <button
-          type="button"
-          className={"control volleyball-btn" + (pressedDir === "right" ? " is-active" : "")}
-          aria-label="向右移動"
-          onPointerDown={event => {
-            if (event.button !== 0 && event.pointerType === "mouse") return;
-            event.preventDefault();
-            event.currentTarget.setPointerCapture(event.pointerId);
-            pressDir("right");
-          }}
-          onPointerUp={() => releaseDir("right")}
-          onPointerCancel={() => releaseDir("right")}
-          onLostPointerCapture={() => releaseDir("right")}
-          onContextMenu={event => event.preventDefault()}
-        >
-          <ArrowRight size={30} weight="bold" />
-          <span>右移</span>
-        </button>
-      </div>
-      <button
-        type="button"
-        className={"control control-primary volleyball-btn volleyball-jump" + (jumpActive ? " is-active" : "")}
-        aria-label="跳躍擊球"
-        onClick={event => { if (event.detail === 0) void sendRef.current({ kind: "action", action: "jump" }); }}
-        onPointerDown={event => {
-          if (event.button !== 0 && event.pointerType === "mouse") return;
-          event.preventDefault();
-          event.currentTarget.setPointerCapture(event.pointerId);
-          triggerJump();
-        }}
-        onPointerUp={() => setJumpActive(false)}
-        onPointerCancel={() => setJumpActive(false)}
-        onLostPointerCapture={() => setJumpActive(false)}
-        onContextMenu={event => event.preventDefault()}
-      >
-        <ArrowUp size={32} weight="bold" />
-        <span>跳躍</span>
-      </button>
-    </div>
-  );
 }
 
 export function GameControls({ remote, controls, gameId, offset, send }: {

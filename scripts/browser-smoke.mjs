@@ -82,9 +82,10 @@ try {
   }
   await setChance(100);
 
-  async function openHost(id) {
+  async function openHost(id, onPage) {
     const screen = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     track(screen);
+    onPage?.(screen);
     await screen.goto(origin + "/host?id=" + id);
     await screen.getByLabel("主機金鑰").fill(hostKey(id));
     await screen.getByRole("button", { name: "連線至站點" }).click();
@@ -102,7 +103,7 @@ try {
     viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true
   }).then(page => {
     track(page);
-    return { name: index ? "測試玩家 " + index : "瀏覽器玩家", page };
+    return { name: index ? "測試玩家 " + index : "瀏覽器玩家", page, actions: watchActions(page, "game:input") };
   })));
   await players[0].page.goto(oldEntry);
   await players[0].page.getByRole("alert").getByText(/QR Code 已過期/).waitFor();
@@ -339,15 +340,19 @@ try {
     await dashboard.getByText("雙倍挑戰機率已更新").waitFor();
 
     await dashboard.getByRole("button", { name: "測試遊戲" }).click();
+    let practiceCourt;
+    dashboard.context().once("page", page => { practiceCourt = watchVolleyballCourt(page, "practice:state"); });
     const [practiceScreen] = await Promise.all([
       dashboard.waitForEvent("popup"),
       dashboard.getByRole("link", { name: "開啟測試大螢幕" }).click()
     ]);
     track(practiceScreen);
     await practiceScreen.getByText("等待手機掃碼連線").waitFor();
+    const practiceActions = new Map();
     const practicePhones = await Promise.all(["P1", "P2"].map(async role => {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
       track(page);
+      practiceActions.set(page, watchActions(page, "practice:input"));
       const fresh = await practiceScreen.waitForFunction(seat => {
         const link = document.querySelector('.practice-seat a[href*="role=' + seat + '"]');
         if (!link?.querySelector("img")) return false;
@@ -365,25 +370,9 @@ try {
     await practiceScreen.getByRole("button", { name: "開始測試" }).click();
     await practiceScreen.getByLabel("史萊姆排球實況畫面").waitFor();
     assert.equal(await practiceScreen.locator(".volleyball-score").count(), 2);
-    for (const [index, mobile] of practicePhones.entries()) {
-      const movement = mobile.getByRole("button", { name: index === 0 ? "向右移動" : "向左移動" });
-      await movement.waitFor();
-      const hit = await movement.boundingBox();
-      assert.ok(hit);
-      await mobile.mouse.move(hit.x + hit.width / 2, hit.y + hit.height / 2);
-      await mobile.mouse.down();
-      await eventually(async () => assert.match(await movement.getAttribute("class"), /is-active/));
-      await wait(140);
-      await mobile.mouse.up();
-      await eventually(async () => assert.doesNotMatch(await movement.getAttribute("class"), /is-active/));
-      await mobile.getByRole("button", { name: "跳躍擊球" }).tap();
-      assert.equal(await mobile.locator("canvas").count(), 0);
-      assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    }
-    await eventually(async () => {
-      const points = await practiceScreen.locator(".volleyball-score").allTextContents();
-      assert.ok(points.map(Number).some(score => score > 0));
-    });
+    await checkVolleyballRemote(practicePhones[0], practiceActions.get(practicePhones[0]), practiceCourt);
+    await practicePhones[1].getByRole("button", { name: "跳躍擊球" }).tap();
+    await eventually(() => assert.deepEqual(practiceActions.get(practicePhones[1]), ["jump"]));
     if (process.env.CAMPUS_SCREENSHOTS) {
       await practiceScreen.screenshot({ path: "test-results/volleyball-screen.png", animations: "disabled" });
       await practicePhones[0].screenshot({ path: "test-results/volleyball-controller.png", animations: "disabled" });
@@ -474,10 +463,31 @@ try {
       await practicePhones[1].screenshot({ path: "test-results/practice-win-controller.png", animations: "disabled" });
     }
     assert.equal((await (await fetch(origin + "/api/campus")).json()).leaderboard.players.length, 6);
+
+    // The same control surface must work in an actual, QR-gated station match.
+    await Promise.all([host.close(), pipeHost.close()]);
+    let stationCourt;
+    const volleyballHost = await openHost("HOST-19", page => { stationCourt = watchVolleyballCourt(page, "game:state"); });
+    await eventually(async () => {
+      const campus = await (await fetch(origin + "/api/campus")).json();
+      assert.deepEqual(campus.stations.filter(station => station.online).map(station => station.hostId), ["HOST-19"]);
+    });
+    await Promise.all([phone, rival].map(async page => {
+      await page.goto(origin + "/controller");
+      await page.getByRole("button", { name: "尋找對手" }).tap();
+      await page.getByRole("heading", { name: "前往對戰房間" }).waitFor({ timeout: 15_000 });
+      await page.goto(await freshEntry(volleyballHost));
+      await page.getByRole("button", { name: "我已準備好" }).tap();
+    }));
+    await volleyballHost.getByLabel("史萊姆排球實況畫面").waitFor();
+    await checkVolleyballRemote(phone, players[0].actions, stationCourt);
+    if (process.env.CAMPUS_SCREENSHOTS) {
+      await phone.screenshot({ path: "test-results/volleyball-station-controller.png", animations: "disabled" });
+    }
   }
   assert.deepEqual(consoleErrors, []);
   console.log("Browser smoke passed: both floors, QR rotation, wrong-room rejection, 2 vs 2 with four mobile remotes, split-screen questions, reconnect, weighted result and rankings."
-    + (!process.env.SKIP_BROWSER_ADMIN ? " Admin audit, CSV and two-account practice checked." : ""));
+    + (!process.env.SKIP_BROWSER_ADMIN ? " Admin audit, CSV, practice and station volleyball multitouch checked." : ""));
 } catch (error) {
   console.error(output);
   throw error;
@@ -497,6 +507,86 @@ async function eventually(check) {
   }
   throw failure;
 }
+
+function watchSocketEvent(page, frameEvent, expectedEvent, onEvent) {
+  page.on("websocket", socket => {
+    socket.on(frameEvent, ({ payload }) => {
+      if (typeof payload !== "string" || !payload.startsWith("42")) return;
+      const start = payload.indexOf("[");
+      if (start === -1) return;
+      const [event, data] = JSON.parse(payload.slice(start));
+      if (event === expectedEvent) onEvent(data);
+    });
+  });
+}
+
+function watchActions(page, event) {
+  const actions = [];
+  watchSocketEvent(page, "framesent", event, data => {
+    if (data.action.kind === "action") actions.push(data.action.action);
+  });
+  return actions;
+}
+
+function watchVolleyballCourt(page, event) {
+  let latest;
+  watchSocketEvent(page, "framereceived", event, data => {
+    const scene = (data.panels ?? data.match?.panels)?.[0]?.scene;
+    if (scene?.kind === "volleyball") latest = scene;
+  });
+  return side => latest?.players.find(player => player.side === side);
+}
+
+async function checkVolleyballRemote(page, actions, court) {
+  const stick = page.getByRole("slider", { name: "移動搖桿" });
+  const jump = page.getByRole("button", { name: "跳躍擊球" });
+  await stick.waitFor();
+  const side = Number(await page.locator(".remote-player").getAttribute("data-side"));
+  for (const [width, height] of [[320, 568], [844, 390], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    const [left, right] = await Promise.all([stick.boundingBox(), jump.boundingBox()]);
+    assert.ok(left.x + left.width < right.x, "movement must be left of jump");
+    assert.ok(left.y >= 0 && right.y >= 0 && left.y + left.height <= height && right.y + right.height <= height,
+      "both controls must fit in the viewport at " + width + " × " + height);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  }
+  assert.equal(await page.locator("canvas").count(), 0);
+  const [left, right] = await Promise.all([stick.boundingBox(), jump.boundingBox()]);
+  const first = { x: Math.round(left.x + left.width / 2), y: Math.round(left.y + left.height / 2), id: 0 };
+  const second = { x: Math.round(right.x + right.width / 2), y: Math.round(right.y + right.height / 2), id: 1 };
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, ...touchPoints) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
+  const index = actions.length;
+  try {
+    await touch("touchStart", first);
+    await touch("touchMove", { ...first, x: first.x + 3 });
+    assert.equal(await stick.getAttribute("aria-valuenow"), "0");
+    const holdingRight = { ...first, x: first.x + 27 };
+    await touch("touchMove", holdingRight);
+    await eventually(async () => assert.equal(await stick.getAttribute("aria-valuenow"), "1"));
+    await eventually(() => assert.equal(court(side)?.moveDir, 1));
+    await touch("touchStart", holdingRight, second);
+    await eventually(async () => assert.equal(await jump.getAttribute("data-active"), "true"));
+    assert.equal(await stick.getAttribute("aria-valuenow"), "1");
+    await touch("touchMove", { ...first, x: first.x - 27 }, second);
+    await eventually(async () => assert.equal(await stick.getAttribute("aria-valuenow"), "-1"));
+    await eventually(() => assert.equal(court(side)?.moveDir, -1));
+    await touch("touchCancel");
+    await eventually(async () => assert.equal(await stick.getAttribute("aria-valuenow"), "0"));
+    assert.equal(await jump.getAttribute("data-active"), "false");
+    await eventually(() => assert.deepEqual(actions.slice(index), ["hold-right", "jump", "hold-left", "release"]));
+    await eventually(() => assert.equal(court(side)?.moveDir, 0));
+    await touch("touchStart", first);
+    await touch("touchMove", holdingRight);
+    await eventually(async () => assert.equal(await stick.getAttribute("aria-valuenow"), "1"));
+    await touch("touchEnd");
+    await eventually(async () => assert.equal(await stick.getAttribute("aria-valuenow"), "0"));
+    await eventually(() => assert.deepEqual(actions.slice(index + 4), ["hold-right", "release"]));
+  } finally {
+    await cdp.detach();
+  }
+}
+
 async function freshEntry(page, excluded = "") {
   const handle = await page.waitForFunction(previous => {
     const link = document.querySelector(".qr-link");
