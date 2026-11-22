@@ -191,27 +191,29 @@ export function AirHockeyControls({ send }: { send: (action: Action) => Promise<
   } as CSSProperties;
 
   return (
-    <div className="airhockey-controls" role="group" aria-label="氣墊球搖桿">
-      <div
-        className="airhockey-stick"
-        role="application"
-        tabIndex={0}
-        aria-label="球拍搖桿"
-        aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight W A S D"
-        data-dragging={dragging}
-        style={stickStyle}
-        onPointerDown={startStick}
-        onPointerMove={dragStick}
-        onPointerUp={endStick}
-        onPointerCancel={endStick}
-        onLostPointerCapture={endStick}
-        onContextMenu={event => event.preventDefault()}
-      >
-        <span className="airhockey-stick-ring" aria-hidden="true" />
-        <span className="airhockey-stick-cross" aria-hidden="true" />
-        <span className="airhockey-stick-thumb" aria-hidden="true" />
+    <div className="handset-layout" data-controls="air-hockey">
+      <div className="stick-control">
+        <div
+          className="airhockey-stick"
+          role="application"
+          tabIndex={0}
+          aria-label="球拍搖桿"
+          aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight W A S D"
+          data-dragging={dragging}
+          style={stickStyle}
+          onPointerDown={startStick}
+          onPointerMove={dragStick}
+          onPointerUp={endStick}
+          onPointerCancel={endStick}
+          onLostPointerCapture={endStick}
+          onContextMenu={event => event.preventDefault()}
+        >
+          <span className="airhockey-stick-ring" aria-hidden="true" />
+          <span className="airhockey-stick-cross" aria-hidden="true" />
+          <span className="airhockey-stick-thumb" aria-hidden="true" />
+        </div>
+        <span className="stick-hint" aria-hidden="true">拖曳移動球拍</span>
       </div>
-      <span className="airhockey-stick-hint">拖曳搖桿移動球拍</span>
     </div>
   );
 }

@@ -1,24 +1,21 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowCounterClockwise, CaretDoubleDown,
-  Check, Crosshair, Eraser, Flag, Lightning, Trophy
+  ArrowLeft, ArrowRight, ArrowUp, ArrowCounterClockwise, Bomb, CaretDoubleDown,
+  Check, Crosshair, Eraser, Flag, Lightning, Sword, Trophy
 } from "@phosphor-icons/react";
 import { teamColors, type Controls } from "../shared/catalog";
-import type { Action, Direction, MatchEndReason, MatchPanel, Member, RemoteControls, RoomView, Scene, SideCompletion } from "../shared/protocol";
+import type { Action, MatchEndReason, MatchPanel, Member, RemoteControls, RoomView, Scene, SideCompletion } from "../shared/protocol";
 import { sideLabels } from "../shared/route";
 import { fmtScore, ProgressBar, Status } from "./components";
 import { AirHockeyControls } from "./air-hockey-controls";
 import { AirHockeyCanvas } from "./air-hockey-view";
-import { BombermanControls } from "./bomberman-controls";
 import { BombermanCanvas } from "./bomberman-view";
-import { DojoControls } from "./dojo-controls";
+import { ActionButton, DirectionStick } from "./controller-controls";
 import { DojoFighterCanvas } from "./dojo-fighter-view";
-import { VolleyballControls } from "./volleyball-controls";
 import { VolleyballCanvas } from "./volleyball-view";
 
-const directions: [Direction, string, typeof ArrowUp][] = [
-  ["up", "向上", ArrowUp], ["left", "向左", ArrowLeft], ["down", "向下", ArrowDown], ["right", "向右", ArrowRight]
-];
+const spaceKey = [" "];
+const jumpKeys = ["arrowup", "w"];
 const tubeNames = ["青藍", "橙色", "薄荷", "玫瑰", "金色"];
 const colorStyle = (tint?: number) => tint === undefined ? undefined : { "--piece-color": teamColors[tint % teamColors.length] } as CSSProperties;
 const defaultTileNames: Record<string, string> = {
@@ -142,38 +139,6 @@ export function SceneView({ scene, cursor, completion }: { scene: Scene; cursor?
     </div>
   </div>;
 }
-function ActionButton({ action, send, children, label, className = "", repeat = false }: {
-  action: Action; send: (action: Action) => void; children: ReactNode; label: string; className?: string; repeat?: boolean
-}) {
-  const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const current = useRef({ action, send });
-  current.current = { action, send };
-  function release() {
-    clearTimeout(hold.current);
-    hold.current = undefined;
-  }
-  useEffect(() => {
-    window.addEventListener("blur", release);
-    return () => { window.removeEventListener("blur", release); release(); };
-  }, []);
-  function pulse() {
-    current.current.send(current.current.action);
-    hold.current = setTimeout(pulse, 110);
-  }
-  return <button type="button" className={"control " + className} aria-label={label}
-    onClick={event => { if (!repeat || event.detail === 0) send(action); }}
-    onPointerDown={event => {
-      if (!repeat || event.button !== 0) return;
-      release();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      send(action);
-      hold.current = setTimeout(pulse, 240);
-    }}
-    onPointerUp={release} onPointerCancel={release} onLostPointerCapture={release}
-    onContextMenu={event => { if (repeat) event.preventDefault(); }}
-  >{children}</button>;
-}
-
 function QuizControls({ remote, isExpression, offset, send }: {
   remote: RemoteControls; isExpression: boolean; offset: number; send: (action: Action) => Promise<void>;
 }) {
@@ -242,61 +207,47 @@ function QuizControls({ remote, isExpression, offset, send }: {
 export function GameControls({ remote, controls, gameId, offset, send }: {
   remote: RemoteControls; controls: Controls; gameId: string; offset: number; send: (action: Action) => Promise<void>;
 }) {
-  const sendRef = useRef(send);
-  sendRef.current = send;
-  useEffect(() => {
-    if (["volleyball", "air-hockey", "dojo-fighter", "bomberman"].includes(controls)) return;
-    const handler = (event: KeyboardEvent) => {
-      if (["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes((event.target as HTMLElement).tagName)) return;
-      const direction = directions.find(([name]) => event.key.toLowerCase() === "arrow" + name)?.[0];
-      if (direction && ["directions", "traffic", "quest", "flight", "cell"].includes(controls)) {
-        event.preventDefault();
-        sendRef.current({ kind: controls === "cell" ? "cursor" : "move", direction });
-      } else if (event.code === "Space" && ["flight", "runner", "quest", "cell", "traffic"].includes(controls)) {
-        event.preventDefault();
-        sendRef.current({ kind: "action", action: controls === "flight" ? "shoot" : controls === "runner" ? "jump" : "interact" });
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [controls]);
   if (remote.eliminated) return <p className="notice" role="status">你已出局，請看大螢幕等候本場結果。</p>;
   if (remote.completion) return <p className="notice" role="status">{completionLabels[remote.completion]}，等候本場結果。</p>;
-  if (controls === "volleyball") return <VolleyballControls send={send}/>;
   if (controls === "air-hockey") return <AirHockeyControls send={send}/>;
-  if (controls === "dojo-fighter") return <DojoControls send={send}/>;
-  if (controls === "bomberman") return <BombermanControls send={send}/>;
   if (controls === "answer" || controls === "expression") {
     return <QuizControls key={`${remote.questionId}:${remote.answerAvailableAt}`} remote={remote}
       isExpression={controls === "expression"} offset={offset} send={send}/>;
   }
-  if (controls === "flight" || controls === "runner") return <div className="action-controls">
-    {controls === "flight" ? <>
-      <div className="flight-movement" role="group" aria-label="移動">
-        <ActionButton repeat send={send} action={{ kind: "move", direction: "left" }} label="向左"><ArrowLeft size={28}/></ActionButton>
-        <ActionButton repeat send={send} action={{ kind: "move", direction: "right" }} label="向右"><ArrowRight size={28}/></ActionButton>
-      </div>
-      <ActionButton repeat send={send} action={{ kind: "action", action: "shoot" }} label="發射" className="control-primary"><Crosshair size={24}/> 發射</ActionButton>
-    </> : <>
-      <ActionButton send={send} action={{ kind: "action", action: "duck" }} label="蹲下"><CaretDoubleDown size={24}/> 蹲下</ActionButton>
-      <ActionButton send={send} action={{ kind: "action", action: "jump" }} label="跳躍" className="control-primary"><ArrowUp size={24}/> 跳躍</ActionButton>
-    </>}
+  if (controls === "runner") return <div className="runner-controls">
+    <ActionButton send={send} action={{ kind: "action", action: "duck" }} label="蹲下" keys={["arrowdown", "s"]} className="control">
+      <CaretDoubleDown size={24}/> 蹲下</ActionButton>
+    <ActionButton send={send} action={{ kind: "action", action: "jump" }} label="跳躍" keys={[...jumpKeys, " "]} className="control control-primary">
+      <ArrowUp size={24}/> 跳躍</ActionButton>
   </div>;
-  return <div className="direction-controls">
-    <div className="dpad" aria-label="方向鍵">
-      {directions.map(([direction, label, Icon]) => <ActionButton repeat key={direction} className={"move-" + direction}
-        send={send} action={{ kind: controls === "cell" ? "cursor" : "move", direction }} label={label}><Icon size={28} weight="bold"/></ActionButton>)}
-    </div>
-    {controls === "quest" && <ActionButton send={send} action={{ kind: "action", action: "interact" }} label="互動"><Lightning size={20}/> 互動</ActionButton>}
-    {controls === "cell" && <ActionButton send={send} action={{ kind: "action", action: "interact" }} label="確認" className="control-primary">
+  const horizontal = controls === "flight" || controls === "volleyball" || controls === "dojo-fighter";
+  const continuous = controls === "volleyball" || controls === "dojo-fighter" || controls === "bomberman";
+  return <div className="handset-layout" data-controls={controls}>
+    <DirectionStick movement={continuous ? "hold" : controls === "cell" ? "cursor" : "move"} horizontal={horizontal} send={send}/>
+    {controls === "flight" && <ActionButton repeatMs={260} send={send} action={{ kind: "action", action: "shoot" }}
+      label="發射" keys={spaceKey} className="control control-primary"><Crosshair size={24}/> 發射</ActionButton>}
+    {controls === "quest" && <ActionButton send={send} action={{ kind: "action", action: "interact" }} label="互動" keys={spaceKey}
+      className="control control-primary"><Lightning size={22}/> 互動</ActionButton>}
+    {controls === "cell" && <ActionButton send={send} action={{ kind: "action", action: "interact" }} label="確認" keys={spaceKey} className="control control-primary">
       <Check size={22}/> 確認</ActionButton>}
     {controls === "traffic" && <div className="traffic-controls">
-      <ActionButton send={send} action={{ kind: "cursor", direction: "left" }} label="上一輛車"><ArrowLeft size={20}/> 上一輛</ActionButton>
-      <ActionButton send={send} action={{ kind: "cursor", direction: "right" }} label="下一輛車">下一輛 <ArrowRight size={20}/></ActionButton>
-      <ActionButton send={send} action={{ kind: "action", action: "interact" }} label="選取車輛" className="control-primary"><Check size={22}/> 選車</ActionButton>
+      <ActionButton send={send} action={{ kind: "cursor", direction: "left" }} label="上一輛車" className="control"><ArrowLeft size={20}/> 上一輛</ActionButton>
+      <ActionButton send={send} action={{ kind: "cursor", direction: "right" }} label="下一輛車" className="control">下一輛 <ArrowRight size={20}/></ActionButton>
+      <ActionButton send={send} action={{ kind: "action", action: "interact" }} label="選取車輛" keys={spaceKey} className="control control-primary">
+        <Check size={22}/> 選車</ActionButton>
     </div>}
-    {gameId === "game-01" && <ActionButton send={send} action={{ kind: "action", action: "interact" }} label="重排箱子">
+    {gameId === "game-01" && <ActionButton send={send} action={{ kind: "action", action: "interact" }} label="重排箱子" className="control">
       <ArrowCounterClockwise size={20}/> 重排箱子</ActionButton>}
+    {controls === "bomberman" && <ActionButton send={send} action={{ kind: "action", action: "bomb" }} label="放炸彈"
+      keys={[" ", "v", "j", "p", "enter"]} className="bomberman-bomb-btn"><Bomb size={32} weight="fill"/><span>放炸彈</span></ActionButton>}
+    {controls === "dojo-fighter" && <div className="dojo-action-group">
+      <ActionButton send={send} action={{ kind: "action", action: "jump" }} label="跳躍" keys={jumpKeys} className="dojo-jump-btn">
+        <ArrowUp size={28} weight="bold"/><span>跳躍</span></ActionButton>
+      <ActionButton send={send} action={{ kind: "action", action: "attack" }} label="斬擊"
+        keys={[" ", "j", "k", "arrowdown", "enter"]} className="dojo-attack-btn"><Sword size={34} weight="fill"/><span>斬擊</span></ActionButton>
+    </div>}
+    {controls === "volleyball" && <ActionButton send={send} action={{ kind: "action", action: "jump" }} label="跳躍擊球"
+      keys={[...jumpKeys, " "]} className="volleyball-jump"><ArrowUp size={32} weight="bold"/><span>跳躍</span></ActionButton>}
   </div>;
 }
 

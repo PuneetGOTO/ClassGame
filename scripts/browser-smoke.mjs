@@ -238,17 +238,36 @@ try {
     await page.goto(await freshEntry(pipeHost));
     await page.getByRole("button", { name: "我已準備好" }).click();
   }));
-  const direction = phone.getByRole("button", { name: "向下" });
-  await direction.waitFor();
+  const pipeStick = phone.getByRole("application", { name: "游標搖桿" });
+  await pipeStick.waitFor();
   const pipeSide = Number(await phone.locator(".remote-player").getAttribute("data-side"));
   const activePipe = pipeHost.locator(".arena-panel").nth(pipeSide);
   const cursorIndex = () => activePipe.locator(".arena-cursor").evaluate(tile => Array.from(tile.parentElement.children).indexOf(tile));
+  const columns = await activePipe.locator(".board").evaluate(board => Number(board.style.getPropertyValue("--cols")));
   const before = await cursorIndex();
-  const bounds = await direction.boundingBox();
-  await phone.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-  await phone.mouse.down();
-  await eventually(async () => assert.equal(await cursorIndex(), before + 6));
-  await phone.mouse.up();
+  await withTouch(phone, async touch => {
+    const center = await touchPoint(pipeStick);
+    const down = { ...center, y: center.y + 28 };
+    await touch("touchStart", center);
+    await touch("touchMove", { ...center, y: center.y + 3 });
+    assert.equal(await cursorIndex(), before);
+    await touch("touchMove", down);
+    await touch("touchEnd");
+    await eventually(async () => assert.equal(await cursorIndex(), before + columns));
+    await wait(300);
+    assert.equal(await cursorIndex(), before + columns, "a quick flick moves one cell");
+    await phone.keyboard.press("ArrowUp");
+    await eventually(async () => assert.equal(await cursorIndex(), before));
+    await touch("touchStart", center);
+    await touch("touchMove", down);
+    await eventually(async () => assert.equal(await cursorIndex(), before + 2 * columns, "holding the stick repeats cursor moves"));
+    await touch("touchCancel");
+    await eventually(async () => assert.equal(await pipeStick.getAttribute("data-direction"), null));
+    await wait(120);
+    const stopped = await cursorIndex();
+    await wait(320);
+    assert.equal(await cursorIndex(), stopped, "cancelling must stop cursor repeats");
+  });
   await phone.getByRole("button", { name: "確認", exact: true }).tap();
   assert.equal(await phone.locator(".board").count(), 0);
   if (process.env.CAMPUS_SCREENSHOTS) {
@@ -267,11 +286,11 @@ try {
   const paused = phone.getByText(/大螢幕連線中斷，遊戲已暫停/);
   await paused.waitFor();
   const frozenTime = await phone.locator(".play-clock").innerText();
-  await direction.waitFor({ state: "hidden" });
+  await pipeStick.waitFor({ state: "hidden" });
   await wait(1100);
   assert.equal(await phone.locator(".play-clock").innerText(), frozenTime);
   pipeHost = await openHost("HOST-03");
-  await direction.waitFor();
+  await pipeStick.waitFor();
   await paused.waitFor({ state: "hidden" });
   assert.equal(await pipeHost.locator(".arena-panel .board").count(), 2);
 
@@ -464,11 +483,26 @@ try {
       const handset = practicePhones[0];
       await handset.setViewportSize({ width: 568, height: 320 });
       const placeBomb = handset.getByRole("button", { name: "放炸彈" });
-      await placeBomb.waitFor();
-      await expectInViewport(handset.locator(".play-clock, .bomberman-dpad, .bomberman-bomb-btn"));
-      await expectSideBySide(handset.locator(".bomberman-controls > *"));
+      const bombStick = handset.getByRole("application", { name: "移動搖桿" });
+      await bombStick.waitFor();
+      await expectInViewport(handset.locator(".play-clock, .direction-stick, .bomberman-bomb-btn"));
+      await expectSideBySide(handset.locator(".handset-layout > *"));
       assert.equal(await handset.locator("canvas").count(), 0);
-      await placeBomb.tap();
+      const mover = () => practiceBombs().players.find(player => player.side === 0 && !player.isBot);
+      const spawnY = mover().y;
+      const actions = practiceActions.get(handset);
+      const firstAction = actions.length;
+      await withTouch(handset, async touch => {
+        const center = await touchPoint(bombStick);
+        const down = { ...center, y: center.y + 26 };
+        await touch("touchStart", center);
+        await touch("touchMove", down);
+        await eventually(() => assert.ok(mover().y > spawnY));
+        await touch("touchStart", down, await touchPoint(placeBomb, 1));
+        assert.equal(await bombStick.getAttribute("data-direction"), "down");
+        await touch("touchCancel");
+      });
+      await eventually(() => assert.deepEqual(actions.slice(firstAction), ["hold-down", "bomb", "release"]));
       await eventually(() => assert.ok(practiceBombs().bombs.some(bomb => bomb.ownerSide === 0)));
       if (process.env.CAMPUS_SCREENSHOTS && mode === "1v1v1v1") {
         await practiceScreen.screenshot({ path: "test-results/bomberman-screen.png", animations: "disabled" });
@@ -486,11 +520,22 @@ try {
     assert.deepEqual(await practiceScreen.locator(".dojo-hp-num").allTextContents(), ["100", "100"]);
     await practicePhones[0].setViewportSize({ width: 568, height: 320 });
     const jump = practicePhones[0].getByRole("button", { name: "跳躍", exact: true });
-    await jump.waitFor();
-    await expectInViewport(practicePhones[0].locator(".play-clock, .dojo-move-pad, .dojo-jump-btn, .dojo-attack-btn"));
-    await expectSideBySide(practicePhones[0].locator(".dojo-controls > *"));
-    await jump.tap();
-    await eventually(() => assert.ok(practiceDojo()?.fighters.some(fighter => fighter.side === 0 && fighter.y < practiceDojo().groundY)));
+    const dojoStick = practicePhones[0].getByRole("slider", { name: "移動搖桿" });
+    await dojoStick.waitFor();
+    await expectInViewport(practicePhones[0].locator(".play-clock, .direction-stick, .dojo-jump-btn, .dojo-attack-btn"));
+    await expectSideBySide(practicePhones[0].locator(".handset-layout > *"));
+    const fighter = () => practiceDojo()?.fighters.find(player => player.side === 0);
+    await withTouch(practicePhones[0], async touch => {
+      const center = await touchPoint(dojoStick);
+      const right = { ...center, x: center.x + 26 };
+      await touch("touchStart", center);
+      await touch("touchMove", right);
+      await eventually(() => assert.ok(fighter()?.vx > 0));
+      await touch("touchStart", right, await touchPoint(jump, 1));
+      await eventually(() => assert.ok(fighter()?.y < practiceDojo().groundY && fighter()?.vx > 0));
+      await touch("touchEnd");
+      await eventually(() => assert.equal(fighter()?.vx, 0));
+    });
     await practicePhones[1].getByRole("button", { name: "斬擊" }).tap();
     await eventually(() => assert.ok(practiceDojo()?.fighters.some(fighter => fighter.side === 1 && fighter.anim === "attack")));
     if (process.env.CAMPUS_SCREENSHOTS) {
@@ -505,6 +550,7 @@ try {
     await practicePhones[1].getByRole("button", { name: "開始測試" }).tap();
     await practiceScreen.locator(".arena-panel").nth(1).waitFor();
     await practicePhones[0].getByRole("button", { name: "A", exact: true }).tap();
+    assert.equal(await practicePhones[0].locator(".direction-stick").count(), 0);
     await eventually(async () => assert.equal(await practiceScreen.locator(".arena-panel").first()
       .locator(".quiz-meta strong").first().innerText(), "1"));
     await practicePhones[0].getByText(/請等候 [12] 秒再作答/).waitFor();
@@ -551,11 +597,11 @@ try {
     await practicePhones[1].getByLabel("選擇遊戲").selectOption("game-03");
     await practiceScreen.getByRole("heading", { name: "水管拼接", exact: true }).waitFor();
     await practiceScreen.getByRole("button", { name: "開始測試" }).click();
-    await practicePhones[0].getByRole("button", { name: "向下" }).waitFor();
+    await practicePhones[0].getByRole("application", { name: "游標搖桿" }).waitFor();
     assert.equal(await practiceScreen.locator(".arena-panel .board").count(), 2);
     await practicePhones[0].setViewportSize({ width: 568, height: 320 });
-    await expectInViewport(practicePhones[0].locator(".play-clock, .direction-controls .control"));
-    await expectSideBySide(practicePhones[0].locator(".direction-controls > *"));
+    await expectInViewport(practicePhones[0].locator(".play-clock, .direction-stick, .handset-action"));
+    await expectSideBySide(practicePhones[0].locator(".handset-layout > *"));
     if (process.env.CAMPUS_SCREENSHOTS) {
       await practicePhones[0].screenshot({ path: "test-results/landscape-directions.png", animations: "disabled" });
     }
@@ -618,8 +664,8 @@ try {
     }
   }
   assert.deepEqual(consoleErrors, []);
-  console.log("Browser smoke passed: both floors, QR rotation, wrong-room rejection, 2 vs 2 with four mobile remotes, split-screen questions, reconnect, weighted result and rankings."
-    + (!process.env.SKIP_BROWSER_ADMIN ? " Admin, CSV, practice QR pairing and both new landscape arcade games checked." : ""));
+  console.log("Browser smoke passed: both floors, QR rotation, four mobile remotes, split-screen questions, joystick movement, reconnect, weighted result and rankings."
+    + (!process.env.SKIP_BROWSER_ADMIN ? " Admin, CSV, practice QR pairing and two-thumb arcade controls checked." : ""));
 } catch (error) {
   console.error(output);
   throw error;
@@ -693,6 +739,23 @@ async function expectInViewport(elements) {
 async function expectSideBySide(elements) {
   const [left, right] = await Promise.all([elements.nth(0).boundingBox(), elements.nth(1).boundingBox()]);
   assert.ok(left && right && left.x + left.width <= right.x, "panels must be side by side in landscape");
+}
+
+async function touchPoint(locator, id = 0) {
+  const box = await locator.boundingBox();
+  assert.ok(box, "touch target must be visible");
+  return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2), id };
+}
+
+async function withTouch(page, check) {
+  const session = await page.context().newCDPSession(page);
+  const touch = (type, ...touchPoints) => session.send("Input.dispatchTouchEvent", { type, touchPoints });
+  try {
+    await check(touch);
+  } finally {
+    await touch("touchCancel").catch(() => {});
+    await session.detach();
+  }
 }
 
 async function expectArenaFits(screen, canvas) {

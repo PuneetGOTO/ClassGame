@@ -266,9 +266,9 @@ export function Controller({ connection }: { connection: CampusConnection }) {
       </>}
       {room.status === "countdown" && <div className="countdown-center"><p>即將開始</p><RoomClock room={room} offset={offset}/></div>}
       {room.status === "running" && <>
-        {room.doubleChallenge && <DoubleBanner challenge={room.doubleChallenge} playerId={player.player.id} team={false}/>}
         {!portrait && me?.participated && !me.forfeited && online && room.pausedAt == null &&
           <GameControls key={room.id} remote={room.match?.remote ?? {}} controls={game.controls} gameId={game.id} offset={offset} send={send}/>}
+        {room.doubleChallenge && <DoubleBanner challenge={room.doubleChallenge} playerId={player.player.id} team={false}/>}
         <p className="muted small">{me?.assisting ? "本場陪打記 0 分。" : "每位玩家須操作，這場才會計入個人關卡。"}</p>
       </>}
       {room.status === "finished" && <p className="notice">正在同步本場成績</p>}
