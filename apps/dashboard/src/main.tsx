@@ -2,6 +2,8 @@ import { createRoot } from "react-dom/client";
 import { ArrowLeft } from "@phosphor-icons/react";
 import "@fontsource-variable/geist";
 import "../../../packages/ui/styles.css";
+import "../../../packages/ui/christmas-theme.css";
+import { ChristmasSnowfall } from "../../../packages/ui/christmas-art";
 import { Brand, Header } from "../../../packages/ui/components";
 import { useCampus } from "../../../packages/ui/network";
 import { Controller } from "../../controller/src/Controller";
@@ -12,13 +14,19 @@ import { Admin } from "./Admin";
 import { Practice } from "./Practice";
 
 const path = location.pathname.replace(/\/$/, "") || "/";
-const names: Record<string,string> = { "/": "校園地圖", "/controller": "手機控制器", "/host": "固定主機", "/leaderboard": "即時排行榜",
+const names: Record<string,string> = { "/": "校園地圖", "/controller": "手機控制器", "/host": "固定主機", "/leaderboard": "聖誕即時排行榜",
   "/admin": "管理後台", "/practice": "測試遊戲" };
 document.title = (names[path] ?? "找不到頁面") + " · Campus Quest";
+if (path === "/leaderboard") {
+  document.body.dataset.theme = "xmas-leaderboard";
+} else {
+  delete document.body.dataset.theme;
+}
 
 function App() {
   const connection = useCampus();
   return <>
+    <ChristmasSnowfall/>
     {path === "/host" || path === "/practice" ? null : <Header path={path} online={connection.online}/>}
     {path === "/" ? <CampusMap connection={connection}/>
       : path === "/controller" ? <Controller connection={connection}/>

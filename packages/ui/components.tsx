@@ -7,6 +7,7 @@ import { teamColors } from "../shared/catalog";
 import type { DoubleChallenge, Progress, RoomView, StationView } from "../shared/protocol";
 import { routePoints, type Difficulty } from "../shared/route";
 import { SCREEN_RECONNECT_MS, STATION_QR_MS } from "../shared/rules";
+import { KawaiiSantaHat } from "./christmas-art";
 
 export const fmtScore = (value: number) => new Intl.NumberFormat("zh-HK", { maximumFractionDigits: 2 }).format(value);
 export const fmtChange = (value: number) => (value > 0 ? "+" : "") + fmtScore(value);
@@ -21,7 +22,7 @@ const routes = [
   ["/admin", "管理後台", SlidersHorizontal]
 ] as const;
 export function Brand() {
-  return <a href="/" className="brand" aria-label="Campus Quest 校園地圖"><span className="brand-mark"><Crosshair weight="bold" size={21}/></span><span>Campus<span className="brand-accent">Quest</span></span></a>;
+  return <a href="/" className="brand" aria-label="Campus Quest 校園地圖"><span className="brand-mark"><KawaiiSantaHat size={22} className="brand-hat"/><Crosshair weight="bold" size={21}/></span><span>Campus<span className="brand-accent">Quest</span></span></a>;
 }
 export function Header({ path, online }: { path: string; online: boolean }) {
   return <header className="topbar"><div className="nav-shell">

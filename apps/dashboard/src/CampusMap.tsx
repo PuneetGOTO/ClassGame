@@ -3,6 +3,7 @@ import { QrCode } from "@phosphor-icons/react";
 import { gameById } from "../../../packages/shared/catalog";
 import { floorLabel, type Floor } from "../../../packages/shared/floors";
 import { Dialog, numberOf, StationStatus } from "../../../packages/ui/components";
+import { KawaiiReindeer, KawaiiSnowman } from "../../../packages/ui/christmas-art";
 import { FloorChooser, FloorGraphic } from "../../../packages/ui/floor-map";
 import type { CampusConnection } from "../../../packages/ui/network";
 
@@ -21,7 +22,21 @@ export function CampusMap({ connection }: { connection: CampusConnection }) {
     setSelectedId(undefined);
   };
   return <main id="main" className="shell floor-dashboard">
-    <h1 className="sr-only">樓層地圖</h1>
+    <section className="xmas-map-banner" data-enter>
+      <div className="xmas-map-banner-left">
+        <KawaiiSnowman size={54}/>
+        <div>
+          <h1>聖誕校園尋寶地圖</h1>
+          <p>點擊樓層上的小房子號碼，查看各教室聖誕對戰遊戲與即時狀態</p>
+        </div>
+      </div>
+      <div className="xmas-map-legend" aria-label="教室狀態說明">
+        <span><i style={{ background: "#1d7a52" }}/> 可加入</span>
+        <span><i style={{ background: "#f59e0b" }}/> 對戰中</span>
+        <span><i style={{ background: "#8aa0b5" }}/> 準備中</span>
+        <KawaiiReindeer size={42}/>
+      </div>
+    </section>
     <FloorChooser floor={floor} select={selectFloor} compact/>
     <div className="floor-canvas" data-floor={floor} data-enter>
       <FloorGraphic key={floor} floor={floor} override={state?.floorMaps[floor]}/>

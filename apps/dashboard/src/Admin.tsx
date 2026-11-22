@@ -8,6 +8,7 @@ import { floorLabel, FLOORS, type Floor } from "../../../packages/shared/floors"
 import { nameSchema, studentNumberSchema, type AdminState, type Result, type StationView, type StudentCredential, type TeamResult } from "../../../packages/shared/protocol";
 import { ROUTE_LENGTH } from "../../../packages/shared/route";
 import { Dialog, Empty, ErrorText, fmtChange, fmtScore, numberOf, StationStatus, Status, TeamTag } from "../../../packages/ui/components";
+import { KawaiiGingerbread, KawaiiSnowman } from "../../../packages/ui/christmas-art";
 import { FloorChooser, FloorGraphic } from "../../../packages/ui/floor-map";
 import { adminRequest, message, RemoteError, request, socket, type CampusConnection } from "../../../packages/ui/network";
 import { AdminLeaderboard, type ScoreScope } from "./AdminLeaderboard";
@@ -93,6 +94,11 @@ export function Admin({ connection }: { connection: CampusConnection }) {
     });
   }
   if (!admin) return <main id="main" className="narrow join-layout" data-enter><section className="panel join-panel">
+    <div className="xmas-login-mascots">
+      <KawaiiGingerbread size={50}/>
+      <p>歡迎來到聖誕老人控制工坊，請輸入管理金鑰開啟賽事控制台</p>
+      <KawaiiSnowman size={50}/>
+    </div>
     <div className="feature-icon"><ShieldCheck size={30} weight="duotone"/></div>
     <p className="eyebrow">活動管理員</p><h1>登入管理後台</h1>
     <p className="muted">輸入中央伺服器的管理金鑰。</p>
@@ -127,8 +133,10 @@ export function Admin({ connection }: { connection: CampusConnection }) {
     location.reload();
   };
   return <main id="main" className="shell dashboard admin-page">
-    <div className="page-intro" data-enter><div><p className="eyebrow"><ShieldCheck size={18}/> 第 {admin.competitionId} 屆正式比賽</p>
-      <h1>管理後台</h1><p className="muted">管理站點排程、隊伍名單及正式成績。</p></div>
+    <div className="page-intro" data-enter><div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <KawaiiGingerbread size={62}/>
+      <div><p className="eyebrow"><ShieldCheck size={18}/> 第 {admin.competitionId} 屆聖誕正式比賽</p>
+      <h1>管理後台</h1><p className="muted">管理站點排程、隊伍名單及正式成績。</p></div></div>
       <div className="admin-actions">
         <button className="button secondary" type="button" disabled={busy} onClick={() => void run(async () => {
           const { screenKey } = await adminRequest<{ screenKey: string }>(secret, "/practice");

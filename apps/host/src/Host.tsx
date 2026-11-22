@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, ArrowsOut, FlagBanner, Monitor, QrCode, UsersThree } from "@phosphor-icons/react";
+import { ArrowRight, ArrowsOut, Monitor, QrCode, UsersThree } from "@phosphor-icons/react";
 import { fixedId, gameById, STATION_COUNT } from "../../../packages/shared/catalog";
 import { floorLabel } from "../../../packages/shared/floors";
 import { HOST_SCREEN_VERSION } from "../../../packages/shared/rules";
 import type { HostView, Result, RoomView, StationEntry, TeamResult } from "../../../packages/shared/protocol";
 import { modeTitle, sideLabels } from "../../../packages/shared/route";
 import { Brand, Countdown, DoubleBanner, ErrorText, fmtChange, HomeLink, RotatingQr, RoomClock, StationStatus, Status } from "../../../packages/ui/components";
+import { KawaiiReindeer, KawaiiSnowman } from "../../../packages/ui/christmas-art";
 import { ArenaPanels, Members, RoundOutcome, SideNames } from "../../../packages/ui/game-view";
 import { message, request, socket, type CampusConnection } from "../../../packages/ui/network";
 
@@ -58,6 +59,11 @@ export function Host({ connection }: { connection: CampusConnection }) {
     };
   }, [id, connect]);
   if (!host) return <main id="main" className="narrow join-layout" data-enter><section className="panel join-panel">
+    <div className="xmas-login-mascots">
+      <KawaiiSnowman size={50}/>
+      <p>聖誕大螢幕站點連線面板</p>
+      <KawaiiReindeer size={50}/>
+    </div>
     <div className="feature-icon"><Monitor size={30} weight="duotone"/></div><p className="eyebrow">固定大螢幕</p>
     <h1>登記遊戲主機</h1><p className="muted">選擇此螢幕的主機編號，並輸入管理後台提供的專屬金鑰。</p>
     <form className="form-stack" onSubmit={event => { event.preventDefault(); if (!socket.connected && !socket.active) socket.connect(); else void connect(id, key); }}>
@@ -105,7 +111,7 @@ export function Host({ connection }: { connection: CampusConnection }) {
             <SideRoster room={room}/></div>
           : room?.status === "finished" ? <RoundOutcome winner={room.match?.winner ?? null} panels={room.match?.panels}
             reason={room.reason === "goal" || room.reason === "completed" || room.reason === "timeout" ? room.reason : null}/>
-          : <div className="host-stage idle"><FlagBanner weight="duotone" size={68}/>
+          : <div className="host-stage idle"><div className="xmas-idle-mascots"><KawaiiSnowman size={74}/><KawaiiReindeer size={74}/></div>
             <h2>{room?.status === "lobby" ? "等候玩家掃碼及就緒" : "等待配對玩家"}</h2>
             {room?.match && <p>報到倒數 <Countdown end={room.match.arrivalDeadline} offset={offset}/></p>}
             <p>{game.objective}</p><StationStatus station={station}/></div>}

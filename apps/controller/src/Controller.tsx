@@ -8,6 +8,7 @@ import { floorLabel } from "../../../packages/shared/floors";
 import { studentNumberSchema, type Action, type PlayerView, type RoomView, type Result, type StationView } from "../../../packages/shared/protocol";
 import { completedRouteSteps, difficultyLabel, modeTitle, sideLabels, ROUTE_LENGTH, routeTierSizes, routePoints, routeTiers } from "../../../packages/shared/route";
 import { Countdown, Dialog, DoubleBanner, Empty, ErrorText, fmtChange, fmtScore, numberOf, RoomClock, ScreenPauseNotice, StationStatus, TeamTag } from "../../../packages/ui/components";
+import { KawaiiGingerbread, KawaiiReindeer } from "../../../packages/ui/christmas-art";
 import { RotateGameNotice, useGameOrientation } from "../../../packages/ui/game-orientation";
 import { GameControls, Members } from "../../../packages/ui/game-view";
 import { message, RemoteError, request, socket, type CampusConnection } from "../../../packages/ui/network";
@@ -193,6 +194,11 @@ export function Controller({ connection }: { connection: CampusConnection }) {
   </Empty>{!online && <button className="button secondary full" onClick={() => { setRestoring(false); }}>返回登入</button>}</main>;
   if (!player) return <main id="main" className="controller narrow join-layout" data-enter>
     <section className="panel join-panel">
+      <div className="xmas-login-mascots">
+        <KawaiiReindeer size={52}/>
+        <p>Merry Christmas！掃碼登入聖誕闖關手掣，一起收集雪國積分吧！</p>
+        <KawaiiGingerbread size={48}/>
+      </div>
       <div className="feature-icon"><GameController size={30} weight="duotone"/></div>
       <p className="eyebrow">手機控制器</p>
       <h1>加入校園闖關</h1>
