@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+data/*
+!data/.gitkeep
+.taste-skill/
+test-results/
+playwright-report/
+
