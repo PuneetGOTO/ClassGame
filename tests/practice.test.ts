@@ -27,7 +27,9 @@ test("two private test accounts can switch games and replay on one display witho
     let publicUpdates = 0;
     observer.on("practice:state", () => { publicUpdates++; });
     assert.equal((await send(observer, "practice:select", { gameId: "game-01" })).ok, false);
+    service.step(STATION_QR_MS - service.time() % STATION_QR_MS);
     const { view } = await ok(screen, "practice:join", { role: "screen", credential: screenKey, entryOrigin: service.origin });
+    assert.ok(view.entries?.every(entry => entry.expiresAt - service.time() === 30_000));
     const p1 = code(view, "P1"), p2 = code(view, "P2");
     assert.notEqual(p1, p2);
     const wrongSeat = await send(first, "practice:join", { role: "P2", credential: p1 });
@@ -109,6 +111,50 @@ test("two private test accounts can switch games and replay on one display witho
   } finally { await service.close(); }
 });
 
+test("practice QR claims protect each connected seat and only their owner can resume", async () => {
+  const service = await harness();
+  try {
+    const [screen, first, second, duplicate] = await Promise.all(Array.from({ length: 4 }, service.connect));
+    const display = () => ok(screen, "practice:join", {
+      role: "screen", credential: service.practice.screenKey(), entryOrigin: service.origin
+    });
+    const initial = (await display()).view;
+    const originalCode = code(initial, "P1");
+    const [one, two] = await Promise.all([
+      ok(first, "practice:join", { role: "P1", credential: originalCode }),
+      ok(second, "practice:join", { role: "P2", credential: code(initial, "P2") })
+    ]);
+    assert.notEqual(one.token, two.token);
+    const rescan = await ok(first, "practice:join", { role: "P1", credential: originalCode });
+    assert.equal(rescan.token, one.token);
+    const busy = await send(duplicate, "practice:join", { role: "P1", credential: originalCode });
+    assert.ok(!busy.ok && busy.code === "practice-seat-busy");
+    const crossSeat = await send(duplicate, "practice:join", { role: "P2", credential: one.token });
+    assert.ok(!crossSeat.ok && crossSeat.code === "practice-link");
+    const forbidden = await send(second, "practice:release", { seat: "P1" });
+    assert.ok(!forbidden.ok && forbidden.code === "wrong-client");
+    assert.deepEqual((await display()).view.seats, { P1: true, P2: true });
+
+    const released = new Promise(resolve => first.once("practice:replaced", resolve));
+    const freed = await ok(screen, "practice:release", { seat: "P1" });
+    assert.deepEqual(await released, { reason: "released" });
+    assert.deepEqual(freed.seats, { P1: false, P2: true });
+    assert.notEqual(code(freed, "P1"), originalCode);
+    assert.equal(code(freed, "P2"), code(initial, "P2"));
+    for (const stale of [one.token, originalCode]) {
+      const denied = await send(duplicate, "practice:join", { role: "P1", credential: stale });
+      assert.ok(!denied.ok && denied.code === "practice-link");
+    }
+    const moved = await ok(duplicate, "practice:join", { role: "P1", credential: code(freed, "P1") });
+    assert.notEqual(moved.token, one.token);
+    assert.deepEqual(moved.view.seats, { P1: true, P2: true });
+    await ok(duplicate, "practice:leave", null);
+    assert.deepEqual((await display()).view.seats, { P1: false, P2: true });
+    const signedOut = await send(duplicate, "practice:join", { role: "P1", credential: moved.token });
+    assert.ok(!signedOut.ok && signedOut.code === "practice-link");
+  } finally { await service.close(); }
+});
+
 test("the last pair of fraction answers settles immediately even when both miss the target", async () => {
   const service = await harness();
   try {
@@ -160,7 +206,7 @@ test("the practice screen can resume a round and a longer outage cancels it", as
   try {
     let screen = await service.connect();
     const [first, second] = await Promise.all([service.connect(), service.connect()]);
-    const joinScreen = (client: typeof screen) => ok(client, "practice:join", { role: "screen", credential: service.practice.key("screen") });
+    const joinScreen = (client: typeof screen) => ok(client, "practice:join", { role: "screen", credential: service.practice.screenKey() });
     const { view } = await joinScreen(screen);
     await ok(first, "practice:join", { role: "P1", credential: code(view, "P1") });
     await ok(second, "practice:join", { role: "P2", credential: code(view, "P2") });

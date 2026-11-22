@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, ArrowsOut, FlagBanner, Monitor, QrCode, UsersThree } from "@phosphor-icons/react";
 import { fixedId, gameById, STATION_COUNT } from "../../../packages/shared/catalog";
 import { floorLabel } from "../../../packages/shared/floors";
-import { HOST_SCREEN_VERSION, STATION_QR_MS } from "../../../packages/shared/rules";
+import { HOST_SCREEN_VERSION } from "../../../packages/shared/rules";
 import type { HostView, Result, RoomView, StationEntry, TeamResult } from "../../../packages/shared/protocol";
 import { modeTitle, sideLabels } from "../../../packages/shared/route";
-import { Brand, Countdown, DoubleBanner, ErrorText, fmtChange, HomeLink, Qr, RoomClock, StationStatus, Status } from "../../../packages/ui/components";
+import { Brand, Countdown, DoubleBanner, ErrorText, fmtChange, HomeLink, RotatingQr, RoomClock, StationStatus, Status } from "../../../packages/ui/components";
 import { ArenaPanels, Members, RoundOutcome, SideNames } from "../../../packages/ui/game-view";
 import { message, request, socket, type CampusConnection } from "../../../packages/ui/network";
 
@@ -13,22 +13,6 @@ const savedHost = "campus.host";
 const requestedHost = new URLSearchParams(location.search).get("id");
 const hosts = Array.from({ length: STATION_COUNT }, (_, index) => fixedId("HOST", index + 1));
 const stored = (id: string) => localStorage.getItem("campus.key." + id) || "";
-
-function StationQr({ entry, open, online, offset }: { entry: StationEntry | null; open: boolean; online: boolean; offset: number }) {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 150);
-    return () => clearInterval(timer);
-  }, []);
-  const seconds = entry ? Math.min(STATION_QR_MS / 1000, Math.ceil((entry.expiresAt - now - offset) / 1000)) : 0;
-  return <>
-    {online && open && entry && seconds > 0
-      ? <Qr key={entry.url} url={entry.url}/>
-      : <div className="qr-placeholder"><QrCode size={42}/><span>{!open ? "暫停入場" : online ? "正在更新入場碼" : "等待主機連線"}</span></div>}
-    {open && <p>用手機相機掃描本站 QR Code</p>}
-    {online && open && seconds > 0 && <span className="qr-timer"><strong>{seconds}</strong> 秒後換碼</span>}
-  </>;
-}
 
 export function Host({ connection }: { connection: CampusConnection }) {
   const { online, offset } = connection;
@@ -128,7 +112,10 @@ export function Host({ connection }: { connection: CampusConnection }) {
       </section>
       <aside className="host-aside">
         <section className="panel host-join"><div className="section-line"><h2><QrCode size={21}/> 手機入場</h2></div>
-          <StationQr entry={host.entry} open={station.open} online={live} offset={offset}/>
+          <RotatingQr entry={live && station.open ? host.entry : null} offset={offset}
+            unavailable={!station.open ? "暫停入場" : !live ? "等待主機連線" : undefined}>
+            {station.open && <p>用手機相機掃描本站 QR Code</p>}
+          </RotatingQr>
           <span>{station.name}{room?.status === "lobby" && " · " + station.queued + " 人尚未到場"}</span>
         </section>
         <section className="panel host-members"><div className="section-line"><h2><UsersThree size={21}/> 參賽者</h2></div>

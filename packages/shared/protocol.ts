@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { GameInfo } from "./catalog";
 import type { Floor } from "./floors";
 import type { Difficulty, MatchMode } from "./route";
-import type { PracticeRole, PracticeView } from "./practice";
+import type { PracticeRole, PracticeSeat, PracticeView } from "./practice";
 
 export const keySchema = z.string().min(16).max(150);
 export const nameSchema = z.string().trim().min(1).max(24).regex(/^[^\p{C}]+$/u, "名稱不可包含控制字元");
@@ -217,6 +217,8 @@ export interface ClientEvents {
   "game:input": (body: z.infer<typeof inputSchema>, ack?: (value: Ack<{ seq: number }>) => void) => void;
   "practice:join": (body: { role: PracticeRole; credential: string; entryOrigin?: string },
     ack: (value: Ack<{ token: string; view: PracticeView }>) => void) => void;
+  "practice:leave": (body: null, ack: (value: Ack) => void) => void;
+  "practice:release": (body: { seat: PracticeSeat }, ack: (value: Ack<PracticeView>) => void) => void;
   "practice:select": (body: { gameId: string }, ack: (value: Ack<PracticeView>) => void) => void;
   "practice:start": (body: null, ack: (value: Ack<PracticeView>) => void) => void;
   "practice:stop": (body: null, ack: (value: Ack<PracticeView>) => void) => void;
@@ -238,7 +240,7 @@ export interface ServerEvents {
   "game:finish": (value: RoomView) => void;
   "game:timeout": (value: RoomView) => void;
   "practice:state": (value: PracticeView) => void;
-  "practice:replaced": (value: null) => void;
+  "practice:replaced": (value: { reason: "reconnected" | "released" }) => void;
   "score:result": (value: Result) => void;
   "score:team-average": (value: TeamResult) => void;
   "score:leaderboard": (value: Leaderboard) => void;

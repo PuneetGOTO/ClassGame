@@ -4,13 +4,12 @@ import { GAMES, categoryLabel, gameById, type Category } from "../../../packages
 import { practiceNames, practiceSeats, type PracticeRole, type PracticeView } from "../../../packages/shared/practice";
 import type { Action } from "../../../packages/shared/protocol";
 import { sideLabels } from "../../../packages/shared/route";
-import { Brand, ErrorText, Qr, RoomClock, ScreenPauseNotice, Status } from "../../../packages/ui/components";
+import { Brand, ErrorText, RotatingQr, RoomClock, ScreenPauseNotice, Status } from "../../../packages/ui/components";
 import { ArenaPanels, GameControls, RoundOutcome } from "../../../packages/ui/game-view";
 import { RemoteError, message, request, socket, type CampusConnection } from "../../../packages/ui/network";
 
 const roleParam = new URLSearchParams(location.search).get("role");
 const role: PracticeRole = roleParam === "P1" || roleParam === "P2" ? roleParam : "screen";
-const storage = role === "screen" ? sessionStorage : localStorage;
 const storageKey = "campus.practice." + role;
 const players = practiceSeats.map((seat, index) => ({ id: seat, name: practiceNames[seat], position: index + 1, side: index }));
 
@@ -30,41 +29,61 @@ export function Practice({ connection }: { connection: CampusConnection }) {
   }, []);
   useEffect(() => {
     let live = true;
-    let token = storage.getItem(storageKey) || new URLSearchParams(location.hash.slice(1)).get("key");
-    if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+    let revision = 0;
+    let token = sessionStorage.getItem(storageKey);
+    function readScan() {
+      const scanned = new URLSearchParams(location.hash.slice(1)).get("key");
+      if (!scanned) return false;
+      history.replaceState(null, "", location.pathname + location.search);
+      token = scanned;
+      return true;
+    }
+    function clearCredential() {
+      token = null;
+      active.current = null;
+      sessionStorage.removeItem(storageKey);
+      setView(null);
+    }
     function restore() {
       if (!token) { setJoining(false); return; }
-      const credential = token;
+      const current = ++revision;
       setJoining(true);
-      void request("practice:join", { role, credential, entryOrigin: location.origin }).then(result => {
-        if (!live) return;
+      void request("practice:join", { role, credential: token, entryOrigin: location.origin }).then(result => {
+        if (!live || current !== revision) return;
         token = result.token;
-        storage.setItem(storageKey, result.token);
+        sessionStorage.setItem(storageKey, result.token);
         update(result.view);
         setError("");
       }).catch(failure => {
-        if (!live) return;
-        if (failure instanceof RemoteError && ["practice-link", "qr-expired"].includes(failure.code)) {
-          storage.removeItem(storageKey);
-          token = null;
-          active.current = null;
-          setView(null);
-        }
+        if (!live || current !== revision) return;
+        if (failure instanceof RemoteError && ["practice-link", "qr-expired", "practice-seat-busy"].includes(failure.code)) clearCredential();
         setError(message(failure));
-      }).finally(() => { if (live) setJoining(false); });
+      }).finally(() => { if (live && current === revision) setJoining(false); });
     }
-    function replaced() {
-      token = null;
-      active.current = null;
-      storage.removeItem(storageKey);
-      setView(null);
+    function replaced(event: { reason: "reconnected" | "released" }) {
+      revision++;
+      clearCredential();
       setJoining(false);
-      setError("此測試帳號已在另一個裝置連線");
+      setError(role === "screen" ? "測試大螢幕已在另一個分頁開啟。" : event?.reason === "released"
+        ? "此席已重新配對，請掃描大螢幕上 " + role + " 的最新 QR Code。"
+        : "此席已在另一個分頁恢復連線。請使用該分頁的手掣。");
+    }
+    function scanAgain() {
+      if (!readScan()) return;
+      revision++;
+      setError("");
+      setJoining(true);
+      if (socket.connected) restore();
+      else if (!socket.active) socket.connect();
     }
     socket.on("connect", restore).on("practice:state", update).on("practice:replaced", replaced);
+    window.addEventListener("hashchange", scanAgain);
+    readScan();
     if (socket.connected) restore();
+    else if (!token) setJoining(false);
     return () => {
       live = false;
+      window.removeEventListener("hashchange", scanAgain);
       socket.off("connect", restore).off("practice:state", update).off("practice:replaced", replaced);
     };
   }, [update]);
@@ -83,17 +102,20 @@ export function Practice({ connection }: { connection: CampusConnection }) {
     setError("");
     try { update(await change()); } catch (failure) { setError(message(failure)); } finally { setBusy(false); }
   }
-  function leave() {
-    storage.removeItem(storageKey);
-    location.assign("/practice?role=" + role);
+  async function leave() {
+    setBusy(true);
+    sessionStorage.removeItem(storageKey);
+    try { if (socket.connected) await request("practice:leave", null); }
+    catch { socket.disconnect(); }
+    finally { location.replace("/practice" + (role === "screen" ? "" : "?role=" + role)); }
   }
 
   if (!view) return <main id="main" className="narrow join-layout">
     <section className="panel join-panel" data-enter>
       <div className="feature-icon">{role === "screen" ? <Monitor size={28}/> : <GameController size={28}/>}</div>
       <h1>{role === "screen" ? "測試大螢幕" : practiceNames[role]}</h1>
-      <p className="muted">{joining ? "正在連線測試房" : role === "screen"
-        ? "請從管理後台開啟測試大螢幕。" : "請掃描測試大螢幕上對應帳號的 QR Code。"}</p>
+      <p className="muted">{joining && !error ? "正在連線測試房" : role === "screen"
+        ? "請從管理後台開啟測試大螢幕。" : "請掃描測試大螢幕上的 " + role + " QR Code。"}</p>
       <ErrorText text={error}/>
       {role === "screen" && <a className="button primary full" href="/admin">前往管理後台</a>}
     </section>
@@ -139,7 +161,7 @@ export function Practice({ connection }: { connection: CampusConnection }) {
           <GameControls key={round.id} remote={view.remote ?? {}} controls={game.controls} gameId={game.id} offset={offset} send={send}/>}
         {controls}
       </section>
-      <button type="button" className="text-button" onClick={leave}>登出 {role}</button>
+      <button type="button" className="text-button" onClick={() => void leave()} disabled={busy}>登出 {role}</button>
     </main>;
   }
 
@@ -152,7 +174,7 @@ export function Practice({ connection }: { connection: CampusConnection }) {
           const action = document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
           void action.catch(() => setError("瀏覽器目前無法切換全螢幕"));
         }}><ArrowsOut size={21}/></button>
-        <button className="button compact secondary" type="button" onClick={leave}>登出</button>
+        <button className="button compact secondary" type="button" onClick={() => void leave()} disabled={busy}>登出</button>
       </div>
     </header>
     <ErrorText text={error}/>
@@ -179,11 +201,13 @@ export function Practice({ connection }: { connection: CampusConnection }) {
           const entry = view.entries?.find(item => item.seat === seat);
           return <section className="panel host-join practice-seat" data-side={side} key={seat}>
             <div className="section-line"><h2>{seat} · {practiceNames[seat]}</h2>
-              <Status online={online && view.seats[seat]} label={online && view.seats[seat] ? "已連線" : "等候掃碼"}/></div>
-            {online && !view.seats[seat] && entry && <>
-              <Qr key={entry.url} url={entry.url} label={seat + " 測試登入"} newTab/>
-              <p className="muted small"><QrCode size={16}/> 用手機相機掃碼</p>
-            </>}
+              <Status online={online && view.seats[seat]} label={!online ? "正在重連" : view.seats[seat] ? "已連線" : "等候掃碼"}/></div>
+            {online && (view.seats[seat]
+              ? <button className="button compact secondary" type="button" disabled={busy}
+                onClick={() => void run(() => request("practice:release", { seat }))}>重新配對 {seat}</button>
+              : <RotatingQr entry={entry} offset={offset} label={seat + " 測試登入"} newTab>
+                <p className="muted small"><QrCode size={16}/> 用手機相機掃碼</p>
+              </RotatingQr>)}
           </section>;
         })}
       </aside>

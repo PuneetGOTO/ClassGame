@@ -203,6 +203,9 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
       role: z.enum(["screen", "P1", "P2"]), credential: keySchema, entryOrigin: z.string().max(200).optional()
     }), body, ack, data => practice.join(socket, data.role, data.credential,
       webOrigin(data.entryOrigin ?? socket.handshake.headers.origin ?? ""))));
+    socket.on("practice:leave", (body, ack) => accept(z.null(), body, ack, () => practice.leave(socket)));
+    socket.on("practice:release", (body, ack) => accept(z.object({ seat: z.enum(["P1", "P2"]) }),
+      body, ack, data => practice.release(socket, data.seat)));
     socket.on("practice:select", (body, ack) => accept(z.object({ gameId: z.string().max(32) }),
       body, ack, data => practice.select(socket, data.gameId)));
     socket.on("practice:start", (body, ack) => accept(z.null(), body, ack, () => practice.start(socket)));
@@ -273,7 +276,7 @@ export function createService(config: Configuration, plugins: ReadonlyMap<string
   }
   admin.get("/state", (_req, res) => send(res, campus.adminView()));
   admin.get("/leaderboard", (req, res) => send(res, store.leaderboard(selectedCompetition(req.query.competition))));
-  admin.get("/practice", (_req, res) => send(res, { screenKey: practice.key("screen") }));
+  admin.get("/practice", (_req, res) => send(res, { screenKey: practice.screenKey() }));
   admin.get("/hosts/:id/key", (req, res) => {
     const id = validation(hostIdSchema, req.params.id);
     send(res, { key: hostKey(config.hostSecret, id) });

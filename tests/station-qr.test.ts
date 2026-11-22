@@ -5,7 +5,7 @@ import type { StationEntry } from "../packages/shared/protocol";
 import { hostKey } from "../apps/server/src/config";
 import { credentials, harness, ok, scanCode, send } from "./socket-helper";
 
-test("ten-second codes are room-bound and a valid fresh QR checks in only assigned players", async () => {
+test("30-second codes are room-bound and a valid fresh QR checks in only assigned players", async () => {
   const service = await harness();
   try {
     const host = await service.host("HOST-01");
@@ -21,7 +21,7 @@ test("ten-second codes are room-bound and a valid fresh QR checks in only assign
     const lobby = await service.match([a,b]);
     assert.equal(lobby.stationId, first);
     await service.host("HOST-02");
-    service.step(10_000 - (service.time() % 10_000));
+    service.step(STATION_QR_MS - (service.time() % STATION_QR_MS));
     const second = "STATION-02";
     const observer = await service.connect();
     let exposed = false;
@@ -30,7 +30,7 @@ test("ten-second codes are room-bound and a valid fresh QR checks in only assign
     assert.equal("entry" in summary.stations[0],false);
     const initial = service.campus.hostView("HOST-01").entry!;
     const other = service.campus.hostView("HOST-02").entry!;
-    assert.equal(initial.expiresAt - service.time(), STATION_QR_MS);
+    assert.equal(initial.expiresAt - service.time(), 30_000);
     assert.equal(initial.expiresAt, other.expiresAt);
     assert.notEqual(scanCode(initial.url), scanCode(other.url));
     const badCode = await send(a.socket,"station:scan",{ stationId: second, code: scanCode(initial.url) });

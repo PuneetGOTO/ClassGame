@@ -20,7 +20,7 @@ export interface PracticeView {
     pausedAt?: number;
   } | null;
   panels?: MatchPanel[];
-  entries?: { seat: PracticeSeat; url: string }[];
+  entries?: { seat: PracticeSeat; url: string; expiresAt: number }[];
   remote?: RemoteControls;
   seq: number;
 }

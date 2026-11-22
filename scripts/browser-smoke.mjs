@@ -348,22 +348,50 @@ try {
     ]);
     track(practiceScreen);
     await practiceScreen.getByText("等待手機掃碼連線").waitFor();
+    assert.equal(await practiceScreen.locator(".practice-seat .qr-timer").count(), 2);
     const practiceActions = new Map();
-    const practicePhones = await Promise.all(["P1", "P2"].map(async role => {
-      const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-      track(page);
-      practiceActions.set(page, watchActions(page, "practice:input"));
+    const practiceContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    async function practiceEntry(role) {
       const fresh = await practiceScreen.waitForFunction(seat => {
         const link = document.querySelector('.practice-seat a[href*="role=' + seat + '"]');
         if (!link?.querySelector("img")) return false;
         const key = new URLSearchParams(new URL(link.href).hash.slice(1)).get("key");
-        return key && Number(key.split(".")[0]) > Date.now() + 2500 ? link.href : false;
+        return key && Number(key.split(".")[0]) > Date.now() + 4500 ? link.href : false;
       }, role, { timeout: 15_000 });
-      await page.goto(await fresh.jsonValue());
-      await page.locator(".remote-player").getByText(role, { exact: false }).waitFor();
+      return fresh.jsonValue();
+    }
+    const practiceRoles = ["P1", "P2"];
+    const practiceLinks = await Promise.all(practiceRoles.map(practiceEntry));
+    const practicePhones = await Promise.all(practiceRoles.map(async (role, index) => {
+      const page = await practiceContext.newPage();
+      track(page);
+      await page.addInitScript(seat => {
+        if (!location.hash) return;
+        sessionStorage.setItem("campus.practice." + seat, "obsolete-token-from-this-tab");
+        localStorage.setItem("campus.practice." + seat, "obsolete-token-from-another-tab");
+      }, role);
+      practiceActions.set(page, watchActions(page, "practice:input"));
+      await page.goto(practiceLinks[index]);
+      await page.locator(".remote-player strong").filter({ hasText: role }).waitFor();
       return page;
     }));
     await practiceScreen.getByText("兩支手掣已連線").waitFor();
+    const duplicate = await practiceContext.newPage();
+    track(duplicate);
+    await duplicate.goto(practiceLinks[0]);
+    await duplicate.getByRole("alert").getByText(/P1 已有手機連線/).waitFor();
+    await practiceScreen.getByText("兩支手掣已連線").waitFor();
+    await duplicate.close();
+    await practicePhones[0].reload();
+    await practicePhones[0].locator(".remote-player strong").filter({ hasText: "P1" }).waitFor();
+    assert.equal(await practicePhones[1].getByRole("alert").count(), 0);
+    await practiceScreen.getByRole("button", { name: "重新配對 P1", exact: true }).click();
+    await practicePhones[0].getByRole("alert").getByText(/此席已重新配對/).waitFor();
+    const replacementLink = await practiceEntry("P1");
+    assert.notEqual(replacementLink, practiceLinks[0]);
+    await practicePhones[0].goto(replacementLink);
+    await practiceScreen.getByText("兩支手掣已連線").waitFor();
+    assert.equal(await practicePhones[1].getByRole("alert").count(), 0);
     assert.equal(await practicePhones[0].locator("select option").count(), 20);
     assert.equal(await practicePhones[0].locator("option[value='game-19']").count(), 0);
     await practiceScreen.getByRole("heading", { name: "史萊姆排球", exact: true }).waitFor();
@@ -487,7 +515,7 @@ try {
   }
   assert.deepEqual(consoleErrors, []);
   console.log("Browser smoke passed: both floors, QR rotation, wrong-room rejection, 2 vs 2 with four mobile remotes, split-screen questions, reconnect, weighted result and rankings."
-    + (!process.env.SKIP_BROWSER_ADMIN ? " Admin audit, CSV, practice and station volleyball multitouch checked." : ""));
+    + (!process.env.SKIP_BROWSER_ADMIN ? " Admin, CSV, practice QR pairing and volleyball multitouch checked." : ""));
 } catch (error) {
   console.error(output);
   throw error;
@@ -593,7 +621,7 @@ async function freshEntry(page, excluded = "") {
     if (!(link instanceof HTMLAnchorElement) || link.href === previous || !link.querySelector("img")) return false;
     const code = new URLSearchParams(new URL(link.href).hash.slice(1)).get("scan");
     return code && Number(code.split(".")[0]) - Date.now() > 3500 ? link.href : false;
-  }, excluded, { timeout: 15_000 });
+  }, excluded, { timeout: excluded ? 40_000 : 15_000 });
   return handle.jsonValue();
 }
 

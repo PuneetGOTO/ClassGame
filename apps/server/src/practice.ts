@@ -1,7 +1,7 @@
-import { createHmac, randomInt, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { COUNTDOWN_MS, GAME_MS, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
 import { practiceSeats, type PracticeRole, type PracticeSeat, type PracticeView } from "../../../packages/shared/practice";
-import type { ClientEvents } from "../../../packages/shared/protocol";
+import { stationQrSchema, type ClientEvents } from "../../../packages/shared/protocol";
 import type { PluginFactory } from "../../../packages/game-sdk";
 import { SCREEN_RECONNECT_MS } from "../../../packages/shared/rules";
 import { Arena, type ArenaResult } from "./arena";
@@ -12,11 +12,14 @@ import { RequestError } from "./store";
 
 type Input = Parameters<ClientEvents["practice:input"]>[0];
 type Round = NonNullable<PracticeView["round"]> & { arena: Arena; pausedMs: number; sequence: Record<PracticeSeat, number> };
+type Pairing = { id: string; token: string | null };
 const sideOf: Record<PracticeSeat, number> = { P1: 0, P2: 1 };
 const bothSides = new Set([0, 1]);
+const newPairing = (): Pairing => ({ id: randomUUID(), token: null });
 
 export class Practice {
   private readonly peers = new Map<PracticeRole, CampusSocket>();
+  private readonly pairings: Record<PracticeSeat, Pairing> = { P1: newPairing(), P2: newPairing() };
   private gameId = VOLLEYBALL_ID;
   private round?: Round;
   private codeDeadline = 0;
@@ -28,21 +31,42 @@ export class Practice {
     private readonly now: () => number
   ) {}
 
-  key(role: PracticeRole) {
-    return createHmac("sha256", this.credentialSecret).update("campus-practice:" + role).digest("base64url");
+  screenKey() {
+    return createHmac("sha256", this.credentialSecret).update("campus-practice:screen").digest("base64url");
+  }
+
+  private qrScope(seat: PracticeSeat) {
+    return "practice:" + seat + ":" + this.pairings[seat].id;
+  }
+
+  private controllerToken(socket: CampusSocket, seat: PracticeSeat, credential: string) {
+    const pairing = this.pairings[seat];
+    if (pairing.token && matchesSecret(credential, pairing.token)) return pairing.token;
+
+    const screen = this.peers.get("screen");
+    if (!screen || !stationQrSchema.safeParse(credential).success) {
+      throw new RequestError("測試連線已失效，請掃描大螢幕上 " + seat + " 的 QR Code", "practice-link", 401);
+    }
+    const check = checkStationQr(this.credentialSecret, this.qrScope(seat), screen.id, this.now(), credential);
+    if (check === "expired") throw new RequestError("掃碼已過期，請掃描大螢幕上 " + seat + " 的最新 QR Code", "qr-expired", 403);
+    if (check !== "valid") throw new RequestError("入場碼已更換，請掃描大螢幕上 " + seat + " 的最新 QR Code", "practice-link", 401);
+
+    const previous = this.peers.get(seat);
+    if (previous === socket && pairing.token) return pairing.token;
+    if (previous) {
+      throw new RequestError(seat + " 已有手機連線。請掃描另一席的 QR Code，或在大螢幕按「重新配對 " + seat + "」。", "practice-seat-busy", 409);
+    }
+    pairing.token = randomBytes(32).toString("base64url");
+    return pairing.token;
   }
 
   join(socket: CampusSocket, role: PracticeRole, credential: string, entryOrigin?: string) {
-    const token = this.key(role);
-    if (!matchesSecret(credential, token)) {
-      const screen = this.peers.get("screen");
-      if (role === "screen" || !screen) throw new RequestError("測試登入連結無效", "practice-link", 401);
-      const check = checkStationQr(this.credentialSecret, "practice:" + role, screen.id, this.now(), credential);
-      if (check === "expired") throw new RequestError("掃碼已過期，請掃描測試大螢幕上的最新 QR Code", "qr-expired", 403);
-      if (check !== "valid") throw new RequestError("測試登入連結無效", "practice-link", 401);
-    }
     if (socket.data.hostId || socket.data.playerId || (socket.data.practiceRole && socket.data.practiceRole !== role)) {
       throw new RequestError("請用另一個分頁開啟這個測試入口", "bound", 409);
+    }
+    const token = role === "screen" ? this.screenKey() : this.controllerToken(socket, role, credential);
+    if (role === "screen" && !matchesSecret(credential, token)) {
+      throw new RequestError("測試大螢幕連結已失效，請從管理後台重新開啟", "practice-link", 401);
     }
     const previous = this.peers.get(role);
     socket.data.practiceRole = role;
@@ -50,12 +74,31 @@ export class Practice {
     this.peers.set(role, socket);
     if (previous && previous !== socket) {
       if (role !== "screen") this.round?.arena.clearHeldControls(role);
-      previous.emit("practice:replaced", null);
+      previous.emit("practice:replaced", { reason: "reconnected" });
       previous.disconnect(true);
     }
     if (role === "screen" && this.round?.pausedAt != null) this.advance(this.now());
     this.publish(socket);
     return { token, view: this.view(role) };
+  }
+
+  leave(socket: CampusSocket) {
+    const role = this.role(socket);
+    if (role !== "screen") this.pairings[role] = newPairing();
+    this.disconnect(socket);
+    return null;
+  }
+
+  release(socket: CampusSocket, seat: PracticeSeat) {
+    if (this.role(socket) !== "screen") throw new RequestError("請在測試大螢幕重新配對手掣", "wrong-client", 403);
+    this.pairings[seat] = newPairing();
+    const controller = this.peers.get(seat);
+    if (controller) {
+      controller.emit("practice:replaced", { reason: "released" });
+      this.disconnect(controller);
+      controller.disconnect(true);
+    }
+    return this.view("screen");
   }
 
   disconnect(socket: CampusSocket) {
@@ -68,6 +111,7 @@ export class Practice {
     }
     this.round?.arena.clearHeldControls(role === "screen" ? undefined : role);
     this.peers.delete(role);
+    delete socket.data.practiceRole;
     this.publish();
   }
 
@@ -103,9 +147,9 @@ export class Practice {
       const url = new URL("/practice", this.entry(screen.data.entryOrigin));
       url.searchParams.set("role", seat);
       url.hash = new URLSearchParams({
-        key: stationQr(this.credentialSecret, "practice:" + seat, screen.id, expiresAt)
+        key: stationQr(this.credentialSecret, this.qrScope(seat), screen.id, expiresAt)
       }).toString();
-      return { seat, url: url.href };
+      return { seat, url: url.href, expiresAt };
     });
   }
 

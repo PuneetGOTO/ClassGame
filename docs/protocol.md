@@ -30,6 +30,7 @@ Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入
 | 客戶端 → 伺服器 | `station:scan`、`station:join`、`station:leave` | 驗證房間入場碼、入場或排隊、離開站點 |
 | 客戶端 → 伺服器 | `game:ready`、`game:input` | 就緒狀態、移動、點格、動作或送出答案 |
 | 客戶端 → 伺服器 | `host:register`、`admin:watch` | 登記固定主機、訂閱授權後台資訊 |
+| 客戶端 → 伺服器 | `practice:join`、`practice:leave`、`practice:release` | 登入或登出練習房、從大螢幕釋放指定手掣 |
 | 伺服器 → 客戶端 | `campus:state`、`station:update`、`host:status` | 站點、地圖、主機與房況 |
 | 伺服器 → 大螢幕 | `host:entry` | 本站更新後的入場網址和截止時間 |
 | 伺服器 → 客戶端 | `player:update`、`player:kicked`、`team:update`、`team:status` | 玩家、隊伍與參賽者狀態 |
@@ -47,7 +48,9 @@ Socket 路徑是 `/socket.io`，傳輸為 WebSocket。事件定義及 Zod 輸入
 
 大螢幕斷線時傳回 `pausedAt`，手機以該時間凍結場次倒數。重連成功便推移遊戲截止時間及答題等候時間。連續斷線達 30 秒會取消場次，正式賽已報到的玩家可重新配對。
 
-`station:scan` 依伺服器時間驗證房間、大螢幕目前的連線及 10 秒有效期。驗證成功後，該手機連線有最多 90 秒使用該入場資格，受本場報到時限約束。每位玩家掃描配對房間的 QR Code 後可標記準備。至少兩人報到並就緒才可倒數。
+`station:scan` 依伺服器時間驗證房間、大螢幕目前的連線及 30 秒換碼週期。驗證成功後，該手機連線有最多 90 秒使用該入場資格，受本場報到時限約束。每位玩家掃描配對房間的 QR Code 後可標記準備。至少兩人報到並就緒才可倒數。
+
+練習房的 P1、P2 也每 30 秒換碼。伺服器驗證目前的大螢幕和指定席位後，為該次配對簽發專屬的重連令牌。手機在目前分頁保留令牌。大螢幕重新配對時，該席的舊 QR Code 和令牌立即失效。
 
 `player:update` 的 `route` 傳送完成關數、配對狀態和下一站。大螢幕收到 `match.panels`，手機收到 `match.remote`。相同種子讓各方的初始盤面或題組一致，手機輸入只影響該玩家的陣營。
 

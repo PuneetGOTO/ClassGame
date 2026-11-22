@@ -6,7 +6,7 @@ import QRCode from "qrcode";
 import { teamColors } from "../shared/catalog";
 import type { DoubleChallenge, Progress, RoomView, StationView } from "../shared/protocol";
 import { routePoints, type Difficulty } from "../shared/route";
-import { SCREEN_RECONNECT_MS } from "../shared/rules";
+import { SCREEN_RECONNECT_MS, STATION_QR_MS } from "../shared/rules";
 
 export const fmtScore = (value: number) => new Intl.NumberFormat("zh-HK", { maximumFractionDigits: 2 }).format(value);
 export const fmtChange = (value: number) => (value > 0 ? "+" : "") + fmtScore(value);
@@ -111,6 +111,27 @@ export function Qr({ url, label = "手機入場", newTab = false }: { url: strin
     {qr ? <img src={qr} alt={label + " QR Code"} width="260" height="260"/> : <span className="qr-loading"><QrCode size={42}/></span>}
   </a>;
 }
+export function RotatingQr({ entry, offset, unavailable, label, newTab, children }: {
+  entry?: { url: string; expiresAt: number } | null; offset: number; unavailable?: string;
+  label?: string; newTab?: boolean; children?: ReactNode;
+}) {
+  const [now, setNow] = useState(Date.now);
+  const expiry = entry?.expiresAt;
+  useEffect(() => {
+    if (expiry === undefined) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 150);
+    return () => clearInterval(timer);
+  }, [expiry]);
+  const seconds = entry ? Math.min(STATION_QR_MS / 1000, Math.ceil((entry.expiresAt - now - offset) / 1000)) : 0;
+  return <>
+    {entry && seconds > 0 ? <Qr key={entry.url} url={entry.url} label={label} newTab={newTab}/>
+      : <div className="qr-placeholder"><QrCode size={42}/><span>{unavailable ?? "正在更新入場碼"}</span></div>}
+    {children}
+    {entry && seconds > 0 && <span className="qr-timer"><strong>{seconds}</strong> 秒後換碼</span>}
+  </>;
+}
+
 export function Dialog({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { dialog.current?.showModal(); }, []);
