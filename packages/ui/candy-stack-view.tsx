@@ -273,9 +273,9 @@ function drawCandyBoard(
   playerLabel: string
 ) {
   const isBlue = board.side === 0;
-  const accent = isBlue ? "#38bdf8" : "#ff6b8b";
-  const softBg = isBlue ? "#f0f9ff" : "#fff1f5";
-  const gridLine = isBlue ? "rgba(56, 189, 248, 0.14)" : "rgba(255, 107, 139, 0.14)";
+  const accent = isBlue ? "#38bdf8" : "#f97316";
+  const softBg = isBlue ? "#f0f9ff" : "#fff4eb";
+  const gridLine = isBlue ? "rgba(56, 189, 248, 0.14)" : "rgba(249, 115, 22, 0.14)";
 
   ctx.save();
   // 落地 Q 弹压扁回弹 + 挨打上顶微抖
@@ -310,13 +310,13 @@ function drawCandyBoard(
   // 细格子参考线
   ctx.strokeStyle = gridLine;
   ctx.lineWidth = 1;
-  for (let c = 1; c < 10; c++) {
+  for (let c = 1; c < CANDY_COLUMNS; c++) {
     ctx.beginPath();
     ctx.moveTo(originX + c * CELL, originY);
     ctx.lineTo(originX + c * CELL, originY + BOARD_H);
     ctx.stroke();
   }
-  for (let r = 1; r < 20; r++) {
+  for (let r = 1; r < CANDY_ROWS; r++) {
     ctx.beginPath();
     ctx.moveTo(originX, originY + r * CELL);
     ctx.lineTo(originX + BOARD_W, originY + r * CELL);
@@ -324,9 +324,9 @@ function drawCandyBoard(
   }
 
   // 已锁定的果冻软糖与焦糖干扰块
-  for (let r = 0; r < 20; r++) {
-    for (let c = 0; c < 10; c++) {
-      const ch = board.grid[r * 10 + c];
+  for (let r = 0; r < CANDY_ROWS; r++) {
+    for (let c = 0; c < CANDY_COLUMNS; c++) {
+      const ch = board.grid[r * CANDY_COLUMNS + c];
       if (ch && ch !== ".") {
         drawJellyCell(ctx, originX + c * CELL, originY + r * CELL, CELL, ch, 1);
       }
@@ -342,7 +342,7 @@ function drawCandyBoard(
         if (!shape[r][c]) continue;
         const gx = x + c;
         const gy = ghostY + r;
-        if (gy >= 0 && gy < 20) {
+        if (gy >= 0 && gy < CANDY_ROWS) {
           ctx.save();
           roundedRect(ctx, originX + gx * CELL + 3, originY + gy * CELL + 3, CELL - 6, CELL - 6, 7);
           ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
@@ -361,7 +361,7 @@ function drawCandyBoard(
         if (!shape[r][c]) continue;
         const gx = x + c;
         const gy = y + r;
-        if (gy >= 0 && gy < 20) {
+        if (gy >= 0 && gy < CANDY_ROWS) {
           drawJellyCell(ctx, originX + gx * CELL, originY + gy * CELL, CELL, type, 1);
         }
       }
@@ -475,7 +475,7 @@ export function CandyStackCanvas({ scene, members }: { scene: CandyStackScene; m
       }
       if (board.lastClearSeq > seen.clearSeq[idx]) {
         seen.clearSeq[idx] = board.lastClearSeq;
-        const rows = board.lastClearRows.length ? board.lastClearRows : [15];
+        const rows = board.lastClearRows.length ? board.lastClearRows : [CANDY_ROWS - 1];
         for (const row of rows) {
           for (let p = 0; p < 16; p++) {
             particlesRef.current.push({

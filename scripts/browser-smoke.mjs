@@ -595,6 +595,22 @@ try {
       assert.ok(practiceActions.get(candyPhone).includes("rotate"));
       assert.ok(currentBoard()?.lastLockSeq > beforeDrop);
     });
+    const occupied = Array.from(currentBoard().grid.matchAll(/[^.]/g), match => match.index);
+    assert.ok(occupied.length >= 4);
+    // Sample each locked cell's center on the blue board to verify the canvas uses the server's grid dimensions.
+    const candyCanvas = practiceScreen.getByLabel("馬卡龍消行工坊即時對戰");
+    await eventually(async () => {
+      const displayed = await candyCanvas.evaluate((canvas, { occupied, cols }) => {
+        const context = canvas.getContext("2d");
+        return occupied.every(index => {
+          const x = (148 + (index % cols + 0.5) * 34) * canvas.width / 1200;
+          const y = (58 + (Math.floor(index / cols) + 0.5) * 34) * canvas.height / 640;
+          const [r, g, b] = context.getImageData(Math.round(x), Math.round(y), 1, 1).data;
+          return Math.max(r, g, b) - Math.min(r, g, b) > 35;
+        });
+      }, { occupied, cols: practiceCandy().cols });
+      assert.equal(displayed, true, "locked candy must be displayed in the server grid cells");
+    });
     if (process.env.CAMPUS_SCREENSHOTS) {
       await practiceScreen.screenshot({ path: "test-results/christmas-candy-screen.png", animations: "disabled" });
       await candyPhone.screenshot({ path: "test-results/christmas-candy-controller.png", animations: "disabled" });
