@@ -19,6 +19,7 @@ import mathDuel from "./game-18";
 import mathBreakout from "./game-20";
 import slimeVolleyball from "./game-21";
 import airHockey from "./game-22";
+import dojoFighter from "./game-24";
 
 export const plugins: ReadonlyMap<string, PluginFactory> = new Map([
   ["game-01", sokoban],
@@ -40,5 +41,6 @@ export const plugins: ReadonlyMap<string, PluginFactory> = new Map([
   ["game-18", mathDuel],
   ["game-20", mathBreakout],
   ["game-21", slimeVolleyball],
-  ["game-22", airHockey]
+  ["game-22", airHockey],
+  ["game-24", dojoFighter]
 ]);

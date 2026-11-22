@@ -23,7 +23,7 @@ export const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("cursor"), direction: directionSchema }),
   z.object({ kind: z.literal("choice"), questionId: z.number().int().positive(), index: z.number().int().min(0).max(3) }),
   z.object({ kind: z.literal("cell"), index: z.number().int().min(0).max(2_000) }),
-  z.object({ kind: z.literal("action"), action: z.enum(["shoot", "jump", "duck", "interact", "hold-left", "hold-right", "release"]) }),
+  z.object({ kind: z.literal("action"), action: z.enum(["shoot", "jump", "duck", "interact", "hold-left", "hold-right", "release", "attack"]) }),
   z.object({ kind: z.literal("stick"), x: z.number().finite().min(-1).max(1), y: z.number().finite().min(-1).max(1) }),
   z.object({ kind: z.literal("answer"), questionId: z.number().int().nonnegative(), value: z.string().trim().min(1).max(64) })
 ]);
@@ -135,7 +135,52 @@ export interface AirHockeyScene {
   wallSeq: number;
   roundSeq: number;
 }
-export type Scene = Board | Tubes | Quiz | Arcade | VolleyballScene | AirHockeyScene;
+export type DojoPhase = "normal" | "overdrive" | "sudden-death";
+export type DojoAnim = "idle" | "run" | "jump" | "attack" | "hurt" | "win" | "ko";
+export interface DojoSamurai {
+  id: string;
+  side: number;
+  slot: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  facing: -1 | 1;
+  hp: number;
+  maxHp: number;
+  alive: boolean;
+  anim: DojoAnim;
+  attackProgress: number; // 0..1 挥刀动画进度
+  hurtMs: number;
+  hits: number;
+}
+export interface DojoSpark {
+  seq: number;
+  x: number;
+  y: number;
+  damage: number;
+  kind: "hit" | "clash" | "ko";
+  ttlMs: number;
+}
+export interface DojoFighterScene {
+  kind: "dojo-fighter";
+  width: number;
+  height: number;
+  groundY: number;
+  theme: "sakura" | "autumn" | "bamboo" | "crimson";
+  elapsedMs: number;
+  phase: DojoPhase;
+  teamHp: [number, number];
+  teamMaxHp: [number, number];
+  fighters: DojoSamurai[];
+  spark: DojoSpark | null;
+  shakeMs: number;
+  finished: boolean;
+  winnerSide: number | null;
+  soundSeq: number;
+  lastSound: "none" | "swing" | "hit" | "clash" | "ko" | "taiko";
+}
+export type Scene = Board | Tubes | Quiz | Arcade | VolleyballScene | AirHockeyScene | DojoFighterScene;
 export interface AnswerStats { attempted: number; correct: number }
 export interface ResultMetrics extends Partial<AnswerStats> { progress?: Progress; sideAnswers?: AnswerStats }
 
