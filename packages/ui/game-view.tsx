@@ -7,6 +7,8 @@ import { teamColors, type Controls } from "../shared/catalog";
 import type { Action, Direction, MatchEndReason, MatchPanel, Member, RemoteControls, RoomView, Scene, SideCompletion } from "../shared/protocol";
 import { sideLabels } from "../shared/route";
 import { fmtScore, ProgressBar, Status } from "./components";
+import { AirHockeyControls } from "./air-hockey-controls";
+import { AirHockeyCanvas } from "./air-hockey-view";
 import { VolleyballControls } from "./volleyball-controls";
 import { VolleyballCanvas } from "./volleyball-view";
 
@@ -39,6 +41,7 @@ export function RoundOutcome({ winner, reason, side, panels }: {
     {won ? <Trophy size={64} weight="duotone"/> : <Flag size={58} weight="duotone"/>}
     <strong>{title}</strong>
     {scene?.kind === "volleyball" && <p className="monotext">藍方 {scene.scores[0]} 比 {scene.scores[1]} 橙方</p>}
+    {scene?.kind === "air-hockey" && <p className="monotext">玩家 1 {scene.scores[0]} 比 {scene.scores[1]} 玩家 2</p>}
     {reason && <p>{endLabels[reason]}</p>}
   </div>;
 }
@@ -60,6 +63,11 @@ export function ArenaPanels({ panels, members }: { panels: MatchPanel[]; members
       <VolleyballCanvas scene={firstScene} members={members}/>
     </div>;
   }
+  if (firstScene?.kind === "air-hockey") {
+    return <div className="arena-shared" aria-label="即時對戰">
+      <AirHockeyCanvas scene={firstScene} members={members}/>
+    </div>;
+  }
   return <div className="arena-panels" data-sides={panels.length} aria-label="即時對戰">
     {panels.map(panel => <section className="arena-panel" key={panel.side} data-side={panel.side}>
       <header><h2>{sideLabels[panel.side]}</h2><SideNames members={members} side={panel.side}/></header>
@@ -71,6 +79,7 @@ export function ArenaPanels({ panels, members }: { panels: MatchPanel[]; members
 
 export function SceneView({ scene, cursor, completion }: { scene: Scene; cursor?: number | null; completion?: SideCompletion }) {
   if (scene.kind === "volleyball") return <VolleyballCanvas scene={scene} members={[]}/>;
+  if (scene.kind === "air-hockey") return <AirHockeyCanvas scene={scene} members={[]}/>;
   if (scene.kind === "grid") return <div className="board" style={{ "--cols": scene.width, "--rows": scene.height } as CSSProperties} aria-label="遊戲棋盤">
     {scene.tiles.map((tile, index) => {
       const contents = <>
@@ -214,7 +223,7 @@ export function GameControls({ remote, controls, gameId, offset, send }: {
   const sendRef = useRef(send);
   sendRef.current = send;
   useEffect(() => {
-    if (controls === "volleyball") return;
+    if (controls === "volleyball" || controls === "air-hockey") return;
     const handler = (event: KeyboardEvent) => {
       if (["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes((event.target as HTMLElement).tagName)) return;
       const direction = directions.find(([name]) => event.key.toLowerCase() === "arrow" + name)?.[0];
@@ -231,6 +240,7 @@ export function GameControls({ remote, controls, gameId, offset, send }: {
   }, [controls]);
   if (remote.completion) return <p className="notice" role="status">{completionLabels[remote.completion]}，等候本場結果。</p>;
   if (controls === "volleyball") return <VolleyballControls send={send}/>;
+  if (controls === "air-hockey") return <AirHockeyControls send={send}/>;
   if (controls === "answer" || controls === "expression") {
     return <QuizControls key={`${remote.questionId}:${remote.answerAvailableAt}`} remote={remote}
       isExpression={controls === "expression"} offset={offset} send={send}/>;

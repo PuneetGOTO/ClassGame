@@ -108,8 +108,10 @@ export class Arena {
     if (this.sharedEngine) {
       const seat = this.sharedSeats.get(playerId);
       const accepted = seat?.side === sideIndex && this.sharedEngine.handleInput(seat.slot, action, { elapsed, activePlayers: [seat.slot] });
-      // Releasing a key on blur does not count as participation.
-      return { changed: accepted, played: accepted && !(action.kind === "action" && action.action === "release") };
+      const passive = (action.kind === "action" && action.action === "release")
+        || (action.kind === "stick" && Math.hypot(action.x, action.y) < 0.1);
+      // Releasing a key or returning the stick to center does not count as participation.
+      return { changed: accepted, played: accepted && !passive };
     }
     const side = this.sides.get(sideIndex);
     if (!side || side.completion) return { changed: false, played: false };
@@ -229,6 +231,10 @@ export class Arena {
 
   result(eligible: ReadonlySet<number>, timeUp = false): ArenaResult | undefined {
     if (this.sharedEngine) {
+      const winners = [...eligible].filter(side => this.sharedEngine!.checkWin(sideKey(side)));
+      if (winners.length) {
+        return { winner: winners.length === 1 ? winners[0] : null, reason: timeUp ? "timeout" : "goal" };
+      }
       if (!timeUp) return;
       const ranked = [...eligible].map(side => {
         const progress = this.panel(side, false).progress;

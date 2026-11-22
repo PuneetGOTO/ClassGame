@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { migrations } from "../apps/server/src/migrations";
 import { Store } from "../apps/server/src/store";
-import { NUMBER_HUNT_ID, VOLLEYBALL_ID } from "../packages/shared/catalog";
+import { GAMES, NUMBER_HUNT_ID, VOLLEYBALL_ID } from "../packages/shared/catalog";
 import { planPosition } from "../packages/shared/floors";
 
 test("upgrading a version-one database preserves its identity and initializes result metrics", async () => {
@@ -86,7 +86,7 @@ test("version nine swaps the room and preserves Number Hunt's official points", 
       assert.equal(upgraded.competitionId, edition);
       assert.equal(upgraded.stationRows().find(station => station.hostId === "HOST-19")?.gameId, VOLLEYBALL_ID);
       assert.equal(upgraded.get<{ enabled: number }>("SELECT enabled FROM games WHERE game_id=?", NUMBER_HUNT_ID)?.enabled, 0);
-      assert.equal(upgraded.get<{ count: number }>("SELECT COUNT(*) AS count FROM games WHERE enabled=1")?.count, 20);
+      assert.equal(upgraded.get<{ count: number }>("SELECT COUNT(*) AS count FROM games WHERE enabled=1")?.count, GAMES.length);
       assert.equal(upgraded.get<{ status: string }>("SELECT status FROM game_sessions WHERE session_id='retired-wait'")?.status, "cancelled");
       assert.equal(upgraded.get<{ player_id: string }>("SELECT player_id FROM match_search")?.player_id, player);
       assert.equal(upgraded.officialFor(player)[0]?.gameId, NUMBER_HUNT_ID);

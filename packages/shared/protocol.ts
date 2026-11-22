@@ -24,6 +24,7 @@ export const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("choice"), questionId: z.number().int().positive(), index: z.number().int().min(0).max(3) }),
   z.object({ kind: z.literal("cell"), index: z.number().int().min(0).max(2_000) }),
   z.object({ kind: z.literal("action"), action: z.enum(["shoot", "jump", "duck", "interact", "hold-left", "hold-right", "release"]) }),
+  z.object({ kind: z.literal("stick"), x: z.number().finite().min(-1).max(1), y: z.number().finite().min(-1).max(1) }),
   z.object({ kind: z.literal("answer"), questionId: z.number().int().nonnegative(), value: z.string().trim().min(1).max(64) })
 ]);
 export const inputSchema = z.object({
@@ -99,7 +100,42 @@ export interface VolleyballScene {
   rally: number;
   roundSeq: number;
 }
-export type Scene = Board | Tubes | Quiz | Arcade | VolleyballScene;
+export interface AirHockeyPaddle {
+  id: string;
+  side: number;
+  slot: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+}
+export interface AirHockeyPuck {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+}
+export interface AirHockeyScene {
+  kind: "air-hockey";
+  width: number;
+  height: number;
+  goalTop: number;
+  goalBottom: number;
+  theme: "cyber" | "synth" | "laser" | "hyper";
+  scores: [number, number];
+  winScore: number;
+  paddles: AirHockeyPaddle[];
+  puck: AirHockeyPuck;
+  overdrive: boolean;
+  frozen: boolean;
+  lastScorer: number | null;
+  hitSeq: number;
+  wallSeq: number;
+  roundSeq: number;
+}
+export type Scene = Board | Tubes | Quiz | Arcade | VolleyballScene | AirHockeyScene;
 export interface AnswerStats { attempted: number; correct: number }
 export interface ResultMetrics extends Partial<AnswerStats> { progress?: Progress; sideAnswers?: AnswerStats }
 

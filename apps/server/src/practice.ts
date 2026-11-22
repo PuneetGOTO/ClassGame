@@ -1,5 +1,5 @@
 import { createHmac, randomInt, randomUUID } from "node:crypto";
-import { COUNTDOWN_MS, GAME_MS, VOLLEYBALL_ID } from "../../../packages/shared/catalog";
+import { AIR_HOCKEY_ID, COUNTDOWN_MS, GAME_MS, gameById } from "../../../packages/shared/catalog";
 import { practiceSeats, type PracticeRole, type PracticeSeat, type PracticeView } from "../../../packages/shared/practice";
 import type { ClientEvents } from "../../../packages/shared/protocol";
 import type { PluginFactory } from "../../../packages/game-sdk";
@@ -17,7 +17,7 @@ const bothSides = new Set([0, 1]);
 
 export class Practice {
   private readonly peers = new Map<PracticeRole, CampusSocket>();
-  private gameId = VOLLEYBALL_ID;
+  private gameId = AIR_HOCKEY_ID;
   private round?: Round;
   private codeDeadline = 0;
 
@@ -89,7 +89,7 @@ export class Practice {
       seq: role === "screen" ? 0 : state?.sequence[role] ?? 0,
       ...(role === "screen" ? {
         entries: this.entries(),
-        ...((state?.status === "running" || (state?.reason === "timeout" && this.gameId === VOLLEYBALL_ID)) &&
+        ...((state?.status === "running" || (state?.status === "finished" && Boolean(gameById.get(this.gameId)?.sharedArena))) &&
           { panels: [state.arena.panel(0), state.arena.panel(1)] })
       } : { remote: state?.status === "running" ? state.arena.remote(sideOf[role], role, state.pausedMs) : {} })
     };
