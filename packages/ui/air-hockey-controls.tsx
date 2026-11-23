@@ -82,6 +82,7 @@ export function AirHockeyControls({ send }: { send: (action: Action) => Promise<
     if (event.button !== 0 && event.pointerType === "mouse") return;
     if (stickPointer.current) return;
     event.preventDefault();
+    navigator.vibrate?.(15);
     const el = event.currentTarget;
     el.setPointerCapture(event.pointerId);
     const rect = el.getBoundingClientRect();

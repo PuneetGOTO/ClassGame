@@ -5,7 +5,7 @@ import { floorLabel } from "../../../packages/shared/floors";
 import { HOST_SCREEN_VERSION } from "../../../packages/shared/rules";
 import type { HostView, Result, RoomView, StationEntry, TeamResult } from "../../../packages/shared/protocol";
 import { modeTitle, sideLabels } from "../../../packages/shared/route";
-import { Brand, Countdown, DoubleBanner, ErrorText, fmtChange, HomeLink, RotatingQr, RoomClock, StationStatus, Status } from "../../../packages/ui/components";
+import { Brand, CandyCaneTimerBar, Countdown, DoubleBanner, ErrorText, fmtChange, HomeLink, RotatingQr, RoomClock, StationStatus, Status } from "../../../packages/ui/components";
 import { KawaiiReindeer, KawaiiSnowman } from "../../../packages/ui/christmas-art";
 import { ArenaPanels, Members, RoundOutcome, SideNames } from "../../../packages/ui/game-view";
 import { message, request, socket, type CampusConnection } from "../../../packages/ui/network";
@@ -104,6 +104,7 @@ export function Host({ connection }: { connection: CampusConnection }) {
         <div className="host-title"><div><p className="eyebrow">{mode ?? game.english}</p><h1>{game.name}</h1></div>
           <div className="host-clock"><RoomClock room={live ? room : null} offset={offset}/><span>{room?.status === "countdown" ? "開始倒數" : "剩餘時間"}</span></div>
         </div>
+        <CandyCaneTimerBar room={live ? room : null} offset={offset}/>
         {!live && playing &&
           <p className="notice" role="status">大螢幕連線中斷，正在重連。</p>}
         {(room?.status === "running" || room?.status === "finished") && room.doubleChallenge &&

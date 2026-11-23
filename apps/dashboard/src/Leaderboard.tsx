@@ -12,7 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import type { TeamRank } from "../../../packages/shared/protocol";
 import { ROUTE_LENGTH, ROUTE_MAX_BASE_SCORE } from "../../../packages/shared/route";
-import { ChristmasGarland, KawaiiGingerbread, KawaiiReindeer, KawaiiSnowman, SnowHillsFooter } from "../../../packages/ui/christmas-art";
+import { CardSnowCap, HollyBellCorner, KawaiiGingerbread, KawaiiReindeer, KawaiiSnowman, SnowHillsFooter } from "../../../packages/ui/christmas-art";
 import { fmtScore, TeamTag } from "../../../packages/ui/components";
 import type { CampusConnection } from "../../../packages/ui/network";
 import "./christmas-leaderboard.css";
@@ -48,11 +48,10 @@ export function Leaderboard({ connection }: { connection: CampusConnection }) {
 
   return (
     <main id="main" className="shell xmas-stage">
-      {/* 顶部圣诞彩灯挂串 */}
-      <ChristmasGarland />
-
-      {/* 圣诞雪国主横幅 */}
+      {/* 聖誕夜雪頂主橫幅 */}
       <header className="xmas-hero" data-enter>
+        <CardSnowCap />
+        <HollyBellCorner size={38} />
         <div className="xmas-hero-grid">
           <div className="xmas-hero-copy">
             <span className="xmas-eyebrow">
@@ -136,6 +135,8 @@ export function Leaderboard({ connection }: { connection: CampusConnection }) {
                 const pos = (index + 1) as 1 | 2 | 3;
                 return (
                   <article key={player.id} className={`xmas-podium-card rank-pos-${pos}`}>
+                    <CardSnowCap />
+                    <HollyBellCorner size={30} />
                     <div className="xmas-crown-wrap" aria-hidden="true">
                       {pos === 1 ? <Crown size={38} weight="fill" /> : <Medal size={32} weight="fill" />}
                     </div>
@@ -235,6 +236,8 @@ export function Leaderboard({ connection }: { connection: CampusConnection }) {
                 const totalCompleted = team.members.reduce((sum, p) => sum + Math.min(p.completed, ROUTE_LENGTH), 0);
                 return (
                   <article key={team.id} className={`xmas-podium-card rank-pos-${pos}`}>
+                    <CardSnowCap />
+                    <HollyBellCorner size={30} />
                     <div className="xmas-crown-wrap" aria-hidden="true">
                       {pos === 1 ? <Crown size={38} weight="fill" /> : <Medal size={32} weight="fill" />}
                     </div>
