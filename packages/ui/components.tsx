@@ -3,7 +3,7 @@ import {
   ArrowLeft, Crosshair, GameController, Lightning, MapTrifold, Monitor, QrCode, SlidersHorizontal, Trophy, X
 } from "@phosphor-icons/react";
 import QRCode from "qrcode";
-import { teamColors } from "../shared/catalog";
+import { GAME_MS, teamColors } from "../shared/catalog";
 import type { DoubleChallenge, Progress, RoomView, StationView } from "../shared/protocol";
 import { routePoints, type Difficulty } from "../shared/route";
 import { SCREEN_RECONNECT_MS, STATION_QR_MS } from "../shared/rules";
@@ -90,6 +90,29 @@ export function RoomClock({ room, offset }: {
   return <Countdown end={room?.status === "countdown" ? room.startedAt : room?.status === "running" ? room.deadline : undefined}
     offset={offset} frozenAt={room?.pausedAt} secondsOnly={room?.status === "countdown"}/>;
 }
+/** 60 秒紅白斜條紋拐杖糖倒計時條（最後 20 秒切換為香檳金高亮脈衝） */
+export function CandyCaneTimerBar({ room, offset }: {
+  room: Pick<RoomView, "status" | "startedAt" | "deadline" | "pausedAt"> | null | undefined; offset: number;
+}) {
+  const [now, setNow] = useState(Date.now);
+  const running = room?.status === "running" && room.deadline != null;
+  const frozenAt = room?.pausedAt;
+  useEffect(() => {
+    if (!running || frozenAt != null) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 120);
+    return () => clearInterval(timer);
+  }, [running, frozenAt, room?.deadline]);
+  if (!running || room?.deadline == null) return null;
+  const totalMs = room.startedAt != null ? Math.max(1_000, room.deadline - room.startedAt) : GAME_MS;
+  const remainingMs = Math.max(0, room.deadline - (frozenAt ?? now + offset));
+  const pct = Math.max(0, Math.min(100, (remainingMs / totalMs) * 100));
+  const urgent = remainingMs <= 20_000;
+  return <div className={"candy-cane-bar" + (urgent ? " urgent" : "")} role="progressbar"
+    aria-label="對局剩餘時間" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}>
+    <div className="candy-cane-fill" style={{ width: `${pct}%` }}/>
+  </div>;
+}
 export function ScreenPauseNotice({ at, offset }: { at: number; offset: number }) {
   return <p className="notice" role="status">大螢幕連線中斷，遊戲已暫停。等候重連 <Countdown end={at + SCREEN_RECONNECT_MS}
     offset={offset} secondsOnly/> 秒。</p>;
@@ -126,8 +149,11 @@ export function RotatingQr({ entry, offset, unavailable, label, newTab, children
   }, [expiry]);
   const seconds = entry ? Math.min(STATION_QR_MS / 1000, Math.ceil((entry.expiresAt - now - offset) / 1000)) : 0;
   return <>
-    {entry && seconds > 0 ? <Qr key={entry.url} url={entry.url} label={label} newTab={newTab}/>
-      : <div className="qr-placeholder"><QrCode size={42}/><span>{unavailable ?? "正在更新入場碼"}</span></div>}
+    <div className="qr-gift-frame">
+      <span className="qr-gift-bow" aria-hidden="true">聖誕入場禮盒</span>
+      {entry && seconds > 0 ? <Qr key={entry.url} url={entry.url} label={label} newTab={newTab}/>
+        : <div className="qr-placeholder"><QrCode size={42}/><span>{unavailable ?? "正在更新入場碼"}</span></div>}
+    </div>
     {children}
     {entry && seconds > 0 && <span className="qr-timer"><strong>{seconds}</strong> 秒後換碼</span>}
   </>;

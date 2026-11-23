@@ -4,7 +4,7 @@ import { BOMBERMAN_ID, GAMES, categoryLabel, gameById, type Category } from "../
 import { practiceNames, practiceSeats, type PracticeRole, type PracticeView } from "../../../packages/shared/practice";
 import type { Action, BombermanMode } from "../../../packages/shared/protocol";
 import { sideLabels } from "../../../packages/shared/route";
-import { Brand, ErrorText, RotatingQr, RoomClock, ScreenPauseNotice, Status } from "../../../packages/ui/components";
+import { Brand, CandyCaneTimerBar, ErrorText, RotatingQr, RoomClock, ScreenPauseNotice, Status } from "../../../packages/ui/components";
 import { KawaiiReindeer, KawaiiSnowman } from "../../../packages/ui/christmas-art";
 import { RotateGameNotice, useGameOrientation } from "../../../packages/ui/game-orientation";
 import { ArenaPanels, GameControls, RoundOutcome } from "../../../packages/ui/game-view";
@@ -201,6 +201,7 @@ export function Practice({ connection }: { connection: CampusConnection }) {
         </p><h1>{game.name}</h1></div>
           <div className="host-clock"><RoomClock room={online ? round : null} offset={offset}/><span>{round?.status === "countdown" ? "開始倒數" : "剩餘時間"}</span></div>
         </div>
+        <CandyCaneTimerBar room={online ? round : null} offset={offset}/>
         {!online && playing && <p className="notice" role="status">大螢幕連線中斷，正在重連。</p>}
         {round?.status === "running" ? <ArenaPanels panels={view.panels ?? []} members={players}/>
           : round?.status === "countdown" ? <div className="host-stage countdown-center">

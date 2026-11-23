@@ -4,7 +4,8 @@ import "@fontsource-variable/geist";
 import "../../../packages/ui/styles.css";
 import "../../../packages/ui/christmas-theme.css";
 import "../../../packages/ui/host-play.css";
-import { ChristmasSnowfall } from "../../../packages/ui/christmas-art";
+import { TopFairyLights } from "../../../packages/ui/christmas-art";
+import { ChristmasSnowCanvas } from "../../../packages/ui/christmas-snow-canvas";
 import { Brand, Header } from "../../../packages/ui/components";
 import { useCampus } from "../../../packages/ui/network";
 import { Controller } from "../../controller/src/Controller";
@@ -23,11 +24,18 @@ if (path === "/leaderboard") {
 } else {
   delete document.body.dataset.theme;
 }
+const practiceRole = new URLSearchParams(location.search).get("role");
+if (path === "/controller" || (path === "/practice" && (practiceRole === "P1" || practiceRole === "P2"))) {
+  document.body.dataset.page = "controller";
+} else {
+  delete document.body.dataset.page;
+}
 
 function App() {
   const connection = useCampus();
   return <>
-    <ChristmasSnowfall/>
+    <TopFairyLights/>
+    <ChristmasSnowCanvas/>
     {path === "/host" || path === "/practice" ? null : <Header path={path} online={connection.online}/>}
     {path === "/" ? <CampusMap connection={connection}/>
       : path === "/controller" ? <Controller connection={connection}/>

@@ -6,6 +6,7 @@ import {
 import { teamColors, type Controls } from "../shared/catalog";
 import type { Action, MatchEndReason, MatchPanel, Member, RemoteControls, RoomView, Scene, SideCompletion } from "../shared/protocol";
 import { sideLabels } from "../shared/route";
+import { VictoryConfetti, VictoryRibbonBanner } from "./christmas-art";
 import { fmtScore, ProgressBar, Status } from "./components";
 import { AirHockeyControls } from "./air-hockey-controls";
 import { AirHockeyCanvas } from "./air-hockey-view";
@@ -40,6 +41,8 @@ export function RoundOutcome({ winner, reason, side, panels }: {
   const title = winner === null ? "本場平手" : side === undefined ? sideLabels[winner] + "獲勝" : won ? "本場獲勝" : "本場落敗";
   const scene = panels?.[0]?.scene;
   return <div className={"host-stage host-outcome round-outcome " + (won ? "won" : winner === null ? "" : "lost")} role="status" data-enter>
+    {(won || winner === null) && <VictoryConfetti/>}
+    <VictoryRibbonBanner text={winner === null ? "MERRY DRAW" : won ? "MERRY VICTORY" : "GOOD GAME"}/>
     {won ? <Trophy size={64} weight="duotone"/> : <Flag size={58} weight="duotone"/>}
     <strong>{title}</strong>
     {(scene?.kind === "volleyball" || scene?.kind === "air-hockey" || scene?.kind === "candy-stack") &&
@@ -267,7 +270,7 @@ export function GameControls({ remote, controls, gameId, offset, send }: {
 
 export function Members({ room, self }: { room: RoomView; self?: string }) {
   return <div className="members">
-    {room.members.map(member => <div className="member" key={member.id}>
+    {room.members.map(member => <div className="member" key={member.id} data-side={member.side ?? undefined}>
       <span className="member-avatar" style={colorStyle(member.tint)}>P{member.position}</span>
       <span className="member-name">{member.name}{member.id === self ? "（你）" : ""}{member.assisting && " · 陪打"}</span>
       {member.progress && <span className="monotext">{fmtScore(member.progress.value)}/{member.progress.target}</span>}

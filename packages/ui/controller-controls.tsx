@@ -67,6 +67,7 @@ export function DirectionStick({ movement, horizontal = false, downOnly = false,
   function start(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || touch.current) return;
     event.preventDefault();
+    navigator.vibrate?.(15);
     const element = event.currentTarget;
     element.setPointerCapture(event.pointerId);
     touch.current = { id: event.pointerId, x: event.clientX, y: event.clientY, travel: element.clientWidth * 0.28 };
@@ -227,6 +228,7 @@ export function ActionButton({ action, send, children, label, className = "", ke
     onPointerDown={event => {
       if (event.button !== 0 || press.current !== null) return;
       event.preventDefault();
+      navigator.vibrate?.(15);
       event.currentTarget.setPointerCapture(event.pointerId);
       begin(event.pointerId);
     }}
